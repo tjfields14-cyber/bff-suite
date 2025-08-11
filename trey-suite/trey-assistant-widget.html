@@ -4,183 +4,125 @@
 <title>Trey Widget</title>
 <style>
   :root{--bg:#0b0b10;--fg:#e7e7ea;--mut:#9aa1af;--b:#2a2d3a;--bubble:#1b1f2d}
-  body{margin:0;background:transparent;font:14px system-ui}
-  #fab{position:fixed;right:16px;bottom:16px;width:64px;height:64px;border-radius:50%;
-       display:grid;place-items:center;background:linear-gradient(160deg,#2a1e64,#0f1118);
-       color:#fff;border:2px solid rgba(255,255,255,.08);cursor:pointer;z-index:999999}
-  #panel{position:fixed;right:16px;bottom:96px;width:min(420px,calc(100% - 32px));height:520px;
-         display:none;flex-direction:column;border:1px solid var(--b);border-radius:16px;
-         background:linear-gradient(180deg,#151726,#0f111a);color:var(--fg);z-index:999999}
-  #panel.show{display:flex}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:#0b0b10;color:var(--fg);font:14px system-ui}
+  #trey-fab{
+    position:fixed; right:16px; bottom:16px;
+    width:64px; height:64px; border-radius:50%;
+    display:grid; place-items:center;
+    background:linear-gradient(160deg,#2a1e64,#0f1118);
+    color:#fff; border:2px solid rgba(255,255,255,.08);
+    cursor:pointer; z-index:2147483647;
+    box-shadow:0 8px 24px rgba(0,0,0,.35); user-select:none;
+  }
+  #trey-fab .glyph{font-size:28px; line-height:1}
+  #trey-fab .label{position:absolute; bottom:-22px; font-size:11px; color:#cdd}
+  #trey-panel{
+    position:fixed; right:16px; bottom:96px;
+    width:min(420px,calc(100% - 32px)); height:520px;
+    display:none; flex-direction:column;
+    border:1px solid var(--b); border-radius:16px;
+    background:linear-gradient(180deg,#151726,#0f111a);
+    color:var(--fg); z-index:2147483646; overflow:hidden;
+    box-shadow:0 20px 40px rgba(0,0,0,.45);
+  }
+  #trey-panel.show{display:flex}
   .hdr{display:flex;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--b)}
   .hdr .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#22263a}
   .body{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
   .msg{display:flex}
-  .bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);border-radius:12px;padding:8px 10px;white-space:pre-wrap}
+  .bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);
+          border-radius:12px;padding:8px 10px;white-space:pre-wrap}
   .user{justify-content:flex-end}
   .user .bubble{background:#203a6b;border-color:#274374}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-top:1px dashed var(--b);background:#0d0f18}
   .input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--b);background:#0e1018}
-  .input input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0c0d14;color:var(--fg)}
+  .input input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0c0d14;color:#e7e7ea}
   .input button{padding:10px 14px;border-radius:12px;border:1px solid var(--b);background:#14172a;color:#fff;font-weight:700;cursor:pointer}
-  .small{font-size:12px;color:var(--mut)} .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .small{font-size:12px;color:#9aa1af}
+  #trey-fab .glyph::before{content:"🧑🏾‍🦱"}
+  @media (prefers-reduced-motion:no-preference){
+    #trey-fab{transition:transform .08s ease}
+    #trey-fab:active{transform:scale(.96)}
+  }
 </style>
 
-<div id="fab" title="Open Trey">🧑🏾‍🦱</div>
-<section id="panel" aria-hidden="true">
+<div id="trey-fab" aria-label="Open Trey" title="Open Trey">
+  <div class="glyph" aria-hidden="true"></div>
+  <div class="label">Open Trey</div>
+</div>
+
+<section id="trey-panel" aria-hidden="true">
   <div class="hdr">
     <div class="av">🧑🏾‍🦱</div>
-    <div><div style="font-weight:700">Trey</div><div class="small" id="status">disconnected</div></div>
-    <div style="margin-left:auto"><button id="close">✖️</button></div>
+    <div><div style="font-weight:700">Trey</div><div class="small" id="trey-status">disconnected</div></div>
+    <div style="margin-left:auto"><button id="trey-close">✖️</button></div>
   </div>
-
-  <div class="body" id="log"></div>
-
-  <div class="row" style="padding:8px 10px;border-top:1px dashed var(--b);background:#0d0f18">
-    <input id="url" placeholder="Supabase URL">
-    <input id="anon" placeholder="Anon key">
-    <button id="connect">Connect</button>
+  <div class="body" id="trey-log" role="log" aria-live="polite"></div>
+  <div class="row">
+    <input id="trey-url" placeholder="Supabase URL">
+    <input id="trey-anon" placeholder="Anon key">
+    <button id="trey-connect">Connect</button>
   </div>
-
   <div class="input">
-    <input id="msg" placeholder="Ask Trey…">
-    <button id="send">Send</button>
+    <input id="trey-msg" placeholder="Ask Trey…">
+    <button id="trey-send">Send</button>
   </div>
 </section>
 
-<script type="module">
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm";
-  const $ = (id)=>document.getElementById(id);
-  let sb=null;
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const fab=$('trey-fab'), panel=$('trey-panel'), status=$('trey-status');
+  const logEl=$('trey-log'), msg=$('trey-msg');
+  const urlIn=$('trey-url'), anonIn=$('trey-anon');
+  let supabase=null;
 
   function push(who, text){
     const row=document.createElement('div'); row.className='msg '+(who==='user'?'user':'ai');
     const b=document.createElement('div'); b.className='bubble'; b.textContent=text;
-    row.appendChild(b); $('log').appendChild(row); $('log').scrollTop=$('log').scrollHeight;
+    row.appendChild(b); logEl.appendChild(row); logEl.scrollTop=logEl.scrollHeight;
   }
 
-  async function replyTo(text){
-    const reply = "Trey here—got you. " + (text.length>120 ? text.slice(0,120)+"…" : text);
-    push('ai', reply);
-    if(sb){
-      try{ await sb.from('bff_notes').insert({ content: "trey: "+reply }); }catch(e){ console.warn(e); }
+  async function connect(){
+    const url=(urlIn.value||'').trim(), anon=(anonIn.value||'').trim();
+    if(!url || !anon){ alert('Paste URL + anon'); return; }
+    localStorage.setItem('sb_url', url); localStorage.setItem('sb_anon', anon);
+    status.textContent='connecting…';
+    try{
+      const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm');
+      supabase = mod.createClient(url, anon);
+      status.textContent='connected';
+      push('ai','Connected. I’ll log chats to bff_notes.');
+    }catch(e){
+      status.textContent='error';
+      push('ai','Could not load Supabase: '+(e && e.message ? e.message : e));
+      console.error(e);
     }
   }
 
   async function send(){
-    const v=($('msg').value||'').trim(); if(!v) return;
-    push('user', v); $('msg').value='';
-    if(sb){ try{ await sb.from('bff_notes').insert({ content: "user: "+v }); }catch(e){ console.warn(e); } }
-    replyTo(v);
-  }
-
-  async function connect(){
-    const url=($('url').value||'').trim(); const anon=($('anon').value||'').trim();
-    if(!url||!anon){ alert("Paste URL + anon"); return; }
-    localStorage.setItem('sb_url', url); localStorage.setItem('sb_anon', anon);
-    sb = createClient(url, anon);
-    $('status').textContent = 'connected';
-  }
-
-  // UI wiring
-  $('fab').onclick=()=>{ $('panel').classList.add('show'); $('msg').focus(); };
-  $('close').onclick=()=> $('panel').classList.remove('show');
-  $('send').onclick=send; $('msg').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
-  $('connect').onclick=connect;
-
-  // load saved creds if any
-  const savedUrl=localStorage.getItem('sb_url')||''; const savedAnon=localStorage.getItem('sb_anon')||'';
-  if(savedUrl && savedAnon){ $('url').value=savedUrl; $('anon').value=savedAnon; sb=createClient(savedUrl, savedAnon); $('status').textContent='connected'; }
-  push('ai','Yo—tap me, paste Supabase keys once, and I’ll log chats to bff_notes.');
-</script>
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Trey Widget</title>
-<style>
-  :root{--bg:#0b0b10;--fg:#e7e7ea;--mut:#9aa1af;--b:#2a2d3a;--bubble:#1b1f2d;--acc:#7c5cff}
-  body{margin:0;background:transparent;font:14px system-ui}
-  #fab{position:fixed;right:16px;bottom:16px;width:64px;height:64px;border-radius:50%;
-       display:grid;place-items:center;background:linear-gradient(160deg,#2a1e64,#0f1118);
-       color:#fff;border:2px solid rgba(255,255,255,.08);cursor:pointer;z-index:999999}
-  #panel{position:fixed;right:16px;bottom:96px;width:min(420px,calc(100% - 32px));height:520px;
-         display:none;flex-direction:column;border:1px solid var(--b);border-radius:16px;
-         background:linear-gradient(180deg,#151726,#0f111a);color:var(--fg);z-index:999999}
-  #panel.show{display:flex}
-  .hdr{display:flex;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--b)}
-  .hdr .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#22263a}
-  .body{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
-  .msg{display:flex}.user{justify-content:flex-end}
-  .bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);border-radius:12px;padding:8px 10px;white-space:pre-wrap}
-  .user .bubble{background:#203a6b;border-color:#274374}
-  .input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--b);background:#0e1018}
-  .input input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0c0d14;color:var(--fg)}
-  .input button{padding:10px 14px;border-radius:12px;border:1px solid var(--b);background:#14172a;color:#fff;font-weight:700;cursor:pointer}
-  .small{font-size:12px;color:var(--mut)} .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-</style>
-
-<div id="fab" title="Open Trey">🧑🏾‍🦱</div>
-<section id="panel" aria-hidden="true">
-  <div class="hdr">
-    <div class="av">🧑🏾‍🦱</div>
-    <div><div style="font-weight:700">Trey</div><div class="small" id="status">disconnected</div></div>
-    <div style="margin-left:auto"><button id="close">✖️</button></div>
-  </div>
-
-  <div class="body" id="log"></div>
-
-  <div class="row" style="padding:8px 10px;border-top:1px dashed var(--b);background:#0d0f18">
-    <input id="url" placeholder="Supabase URL">
-    <input id="anon" placeholder="Anon key">
-    <button id="connect">Connect</button>
-  </div>
-
-  <div class="input">
-    <input id="msg" placeholder="Ask Trey…">
-    <button id="send">Send</button>
-  </div>
-</section>
-
-<script type="module">
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm";
-  const el = (id)=>document.getElementById(id);
-  let sb=null;
-
-  function push(who, text){
-    const row=document.createElement('div'); row.className='msg '+(who==='user'?'user':'ai');
-    const b=document.createElement('div'); b.className='bubble'; b.textContent=text;
-    row.appendChild(b); el('log').appendChild(row); el('log').scrollTop=el('log').scrollHeight;
-  }
-
-  async function replyTo(text){
-    // placeholder assistant reply; also store to bff_notes
-    const reply = "Trey here—got you. " + (text.length>120 ? text.slice(0,120)+"…" : text);
-    push('ai', reply);
-    if(sb){
-      try{ await sb.from('bff_notes').insert({ content: "trey: "+reply }); }catch{}
+    const v=(msg.value||'').trim(); if(!v) return;
+    push('user', v); msg.value='';
+    if(supabase){
+      try{ await supabase.from('bff_notes').insert({ content: 'user: '+v }); }catch(e){ console.warn(e); }
+      const reply='Trey here—got you. '+(v.length>120?v.slice(0,120)+'…':v);
+      push('ai', reply);
+      try{ await supabase.from('bff_notes').insert({ content: 'trey: '+reply }); }catch(e){ console.warn(e); }
+    } else {
+      push('ai','(offline) Paste Supabase URL + anon, then Connect to save to bff_notes.');
     }
   }
 
-  async function send(){
-    const v=(el('msg').value||'').trim(); if(!v) return;
-    push('user', v); el('msg').value='';
-    if(sb){ try{ await sb.from('bff_notes').insert({ content: "user: "+v }); }catch(e){ console.warn(e); } }
-    replyTo(v);
-  }
+  fab.addEventListener('click', ()=>{ panel.classList.add('show'); msg.focus(); }, false);
+  $('trey-close').addEventListener('click', ()=> panel.classList.remove('show'), false);
+  $('trey-send').addEventListener('click', send, false);
+  msg.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
+  $('trey-connect').addEventListener('click', connect, false);
 
-  async function connect(){
-    const url=(el('url').value||'').trim(); const anon=(el('anon').value||'').trim();
-    if(!url||!anon){ alert("Paste URL + anon"); return; }
-    localStorage.setItem('sb_url', url); localStorage.setItem('sb_anon', anon);
-    sb = createClient(url, anon);
-    el('status').textContent = 'connected';
-  }
-
-  // UI wiring
-  el('fab').onclick=()=>{ el('panel').classList.add('show'); el('msg').focus(); };
-  el('close').onclick=()=> el('panel').classList.remove('show');
-  el('send').onclick=send; el('msg').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
-  el('connect').onclick=connect;
-
-  // load saved creds if any
-  const savedUrl=localStorage.getItem('sb_url')||''; const savedAnon=localStorage.getItem('sb_anon')||'';
-  if(savedUrl && savedAnon){ el('url').value=savedUrl; el('anon').value=savedAnon; sb=createClient(savedUrl, savedAnon); el('status').textContent='connected'; }
+  const su=localStorage.getItem('sb_url')||'', sa=localStorage.getItem('sb_anon')||'';
+  if(su && sa){ urlIn.value=su; anonIn.value=sa; status.textContent='saved creds'; }
   push('ai','Yo—tap me, paste Supabase keys once, and I’ll log chats to bff_notes.');
+})();
 </script>
