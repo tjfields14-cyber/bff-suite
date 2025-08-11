@@ -4,34 +4,25 @@
 <title>Trey Widget</title>
 <style>
   :root{--bg:#0b0b10;--fg:#e7e7ea;--mut:#9aa1af;--b:#2a2d3a;--bubble:#1b1f2d}
-  *{box-sizing:border-box}
-  html,body{height:100%}
+  *{box-sizing:border-box} html,body{height:100%}
   body{margin:0;background:#0b0b10;color:var(--fg);font:14px system-ui}
-  #trey-fab{position:fixed;right:16px;bottom:16px;width:64px;height:64px;border-radius:50%;
-    display:grid;place-items:center;background:linear-gradient(160deg,#2a1e64,#0f1118);
-    color:#fff;border:2px solid rgba(255,255,255,.08);cursor:pointer;z-index:2147483647;
+  #trey-fab{position:fixed;right:16px;bottom:16px;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;
+    background:linear-gradient(160deg,#2a1e64,#0f1118);color:#fff;border:2px solid rgba(255,255,255,.08);cursor:pointer;z-index:2147483647;
     box-shadow:0 8px 24px rgba(0,0,0,.35);user-select:none}
-  #trey-fab .glyph{font-size:28px;line-height:1}
-  #trey-fab .label{position:absolute;bottom:-22px;font-size:11px;color:#cdd}
-  #trey-panel{position:fixed;right:16px;bottom:96px;width:min(420px,calc(100% - 32px));height:520px;
-    display:none;flex-direction:column;border:1px solid var(--b);border-radius:16px;
-    background:linear-gradient(180deg,#151726,#0f111a);color:var(--fg);z-index:2147483646;overflow:hidden;
-    box-shadow:0 20px 40px rgba(0,0,0,.45)}
+  #trey-fab .glyph{font-size:28px;line-height:1} #trey-fab .label{position:absolute;bottom:-22px;font-size:11px;color:#cdd}
+  #trey-panel{position:fixed;right:16px;bottom:96px;width:min(420px,calc(100% - 32px));height:520px;display:none;flex-direction:column;border:1px solid var(--b);border-radius:16px;
+    background:linear-gradient(180deg,#151726,#0f111a);color:var(--fg);z-index:2147483646;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,.45)}
   #trey-panel.show{display:flex}
   .hdr{display:flex;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--b)}
   .hdr .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#22263a}
   .body{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
-  .msg{display:flex}
-  .bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);border-radius:12px;padding:8px 10px;white-space:pre-wrap}
-  .user{justify-content:flex-end}
-  .user .bubble{background:#203a6b;border-color:#274374}
+  .msg{display:flex}.bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);border-radius:12px;padding:8px 10px;white-space:pre-wrap}
+  .user{justify-content:flex-end}.user .bubble{background:#203a6b;border-color:#274374}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-top:1px dashed var(--b);background:#0d0f18}
   .input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--b);background:#0e1018}
   .input input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0c0d14;color:#e7e7ea}
   .input button{padding:10px 14px;border-radius:12px;border:1px solid var(--b);background:#14172a;color:#fff;font-weight:700;cursor:pointer}
-  .small{font-size:12px;color:#9aa1af}
   #trey-fab .glyph::before{content:"🧑🏾‍🦱"}
-  @media (prefers-reduced-motion:no-preference){#trey-fab{transition:transform .08s ease}#trey-fab:active{transform:scale(.96)}}
 </style>
 
 <div id="trey-fab" aria-label="Open Trey" title="Open Trey">
@@ -61,8 +52,7 @@
 (function(){
   const $=id=>document.getElementById(id);
   const fab=$('trey-fab'), panel=$('trey-panel'), status=$('trey-status');
-  const logEl=$('trey-log'), msg=$('trey-msg');
-  const urlIn=$('trey-url'), anonIn=$('trey-anon');
+  const logEl=$('trey-log'), msg=$('trey-msg'), urlIn=$('trey-url'), anonIn=$('trey-anon');
   let supabase=null;
 
   function push(who, text){
@@ -71,10 +61,12 @@
     row.appendChild(b); logEl.appendChild(row); logEl.scrollTop=logEl.scrollHeight;
   }
 
-  // secret detection
-  const secretPatterns=[/(SUPABASE|SERVICE|ANON|API|SECRET|TOKEN|KEY)/i,/sk-[A-Za-z0-9]{20,}/,/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}/,/\.supabase\.co/i,/key=|token=|secret=/i];
+  const secretPatterns=[/(SUPABASE|SERVICE|ANON|API|SECRET|TOKEN|KEY)/i,/sk-[A-Za-z0-9]{20,}/,
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}/,/\.supabase\.co/i,/key=|token=|secret=/i];
   const looksSensitive=s=>secretPatterns.some(rx=>rx.test(s));
-  const redact=s=>s.replace(/[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/g,'[REDACTED_JWT]').replace(/sk-[A-Za-z0-9]{20,}/g,'[REDACTED_KEY]').replace(/([A-Za-z0-9_\-]{24,})/g,'[REDACTED]');
+  const redact=s=>s.replace(/[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/g,'[REDACTED_JWT]')
+                   .replace(/sk-[A-Za-z0-9]{20,}/g,'[REDACTED_KEY]')
+                   .replace(/([A-Za-z0-9_\-]{24,})/g,'[REDACTED]');
 
   async function connect(){
     const url=(urlIn.value||'').trim(), anon=(anonIn.value||'').trim();
@@ -83,14 +75,9 @@
     status.textContent='connecting…';
     try{
       const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm');
-      supabase=mod.createClient(url,anon);
-      status.textContent='connected';
+      supabase=mod.createClient(url,anon); status.textContent='connected';
       push('ai','Connected. I’ll log chats to bff_notes (no secrets).');
-    }catch(e){
-      status.textContent='error';
-      push('ai','Could not load Supabase: '+(e&&e.message?e.message:e));
-      console.error(e);
-    }
+    }catch(e){ status.textContent='error'; push('ai','Could not load Supabase: '+(e&&e.message?e.message:e)); }
   }
 
   async function send(){
@@ -107,11 +94,11 @@
     }
   }
 
-  fab.addEventListener('click', ()=>{ panel.classList.add('show'); msg.focus(); }, false);
-  $('trey-close').addEventListener('click', ()=> panel.classList.remove('show'), false);
-  $('trey-send').addEventListener('click', send, false);
+  fab.addEventListener('click', ()=>{ panel.classList.add('show'); msg.focus(); });
+  $('trey-close').addEventListener('click', ()=> panel.classList.remove('show'));
+  $('trey-send').addEventListener('click', send);
   msg.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
-  $('trey-connect').addEventListener('click', connect, false);
+  $('trey-connect').addEventListener('click', connect);
 
   const su=localStorage.getItem('sb_url')||'', sa=localStorage.getItem('sb_anon')||'';
   if(su&&sa){ urlIn.value=su; anonIn.value=sa; status.textContent='saved creds'; }
