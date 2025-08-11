@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BFF Memory — Supabase Test</title>
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm";
+  let supabase = null;
+  const els = {};
+  function $(id){ return document.getElementById(id); }
+
+  async function connect(){
+    const url = els.url.value.trim();
+    const anon = els.anon.value.trim();
+    if(!url || !anon){ alert("Need URL + anon"); return; }
+    localStorage.setItem("sb_url", url);
+    localStorage.setItem("sb_anon", anon);
+    supabase = createClient(url, anon);
+    await refresh();
+  }
+  async function saveNote(){
+    if(!supabase) return alert("Connect first");
+    const content = (els.note.value||"").trim();
+    if(!content) return;
+    const { error } = await supabase.from("bff_notes").insert({ content });
+    if(error){ alert("Insert error: "+error.message); return; }
+    els.note.value="";
+    await refresh();
+  }
+  async function refresh(){
+    if(!supabase) return;
+    const { data, error } = await supabase.from("bff_notes").select("*").order("created_at",{ascending:false}).limit(50);
+    if(error){ els.list.textContent="Select error: "+error.message; return; }
+    els.list.innerHTML = (data||[]).map(r=>`<li><b>${new Date(r.created_at).toLocaleString()}</b> — ${r.content}</li>`).join("");
+  }
+  window.addEventListener("DOMContentLoaded", ()=>{
+    ["url","anon","note","list"].forEach(id=>els[id]=$ (id));
+    els.url.value = localStorage.getItem("sb_url")||"";
+    els.anon.value = localStorage.getItem("sb_anon")||"";
+    if(els.url.value && els.anon.value){ supabase = createClient(els.url.value, els.anon.value); refresh(); }
+    $("connect").onclick = connect;
+    $("save").onclick = saveNote;
+    $("refresh").onclick = refresh;
+  });
+</script>
+<style>
+  body{margin:0;font:15px system-ui;background:#0b0b10;color:#e7e7ea}
+  main{max-width:840px;margin:0 auto;padding:20px}
+  input,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2d3a;background:#0c0d14;color:#e7e7ea}
+  button{padding:10px 14px;border-radius:12px;border:1px solid #2a2d3a;background:#14172a;color:#fff;font-weight:700;cursor:pointer}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style>
+<main>
+  <h1>BFF Memory — Supabase</h1>
+  <div class="row">
+    <input id="url" placeholder="NEXT_PUBLIC_SUPABASE_URL">
+    <input id="anon" placeholder="NEXT_PUBLIC_SUPABASE_ANON_KEY">
+    <button id="connect">Connect</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <textarea id="note" rows="3" placeholder="Write a note…"></textarea>
+    <button id="save">Save</button>
+    <button id="refresh">Refresh</button>
+  </div>
+  <ul id="list" style="margin-top:12px;line-height:1.6"></ul>
+  <p style="color:#a2a7b5">SQL needed is in <code>../sql/bff_schema.sql</code>. Keep RLS open only for dev.</p>
+</main>
