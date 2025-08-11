@@ -105,3 +105,21 @@
   push('ai','Yo—tap me, paste Supabase keys once, and I’ll log chats to bff_notes (but never secrets).');
 })();
 </script>
+
+<script>
+(function(){
+  // Auto-fill + auto-connect when saved creds exist
+  try{
+    const su = localStorage.getItem('sb_url') || '';
+    const sa = localStorage.getItem('sb_anon') || '';
+    if(su && sa){
+      const u = document.getElementById('trey-url');
+      const a = document.getElementById('trey-anon');
+      if(u && a){
+        u.value = su; a.value = sa;
+        setTimeout(()=>{ const btn=document.getElementById('trey-connect'); btn && btn.click(); }, 250);
+      }
+    }
+  }catch(e){ console.warn('autoconnect failed', e); }
+})();
+</script>
