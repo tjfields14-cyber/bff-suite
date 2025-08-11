@@ -23,11 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set unique artifact name
+        id: vars
+        run: echo "ART=pages-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
       - name: Upload site (trey-suite folder)
         uses: actions/upload-pages-artifact@v3
         with:
           path: trey-suite
+          name: ${{ steps.vars.outputs.ART }}
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ steps.vars.outputs.ART }}
