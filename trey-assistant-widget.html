@@ -1,0 +1,126 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trey Widget</title>
+<style>
+  :root{--bg:#0b0b10;--fg:#e7e7ea;--mut:#9aa1af;--b:#2a2d3a;--bubble:#1b1f2d}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:#0b0b10;color:var(--fg);font:14px system-ui}
+  #trey-fab{position:fixed;right:16px;bottom:16px;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;
+    background:linear-gradient(160deg,#2a1e64,#0f1118);color:#fff;border:2px solid rgba(255,255,255,.08);cursor:pointer;z-index:2147483647;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);user-select:none}
+  #trey-fab .glyph{font-size:28px;line-height:1} #trey-fab .label{position:absolute;bottom:-22px;font-size:11px;color:#cdd}
+  #trey-panel{position:fixed;right:16px;bottom:96px;width:min(420px,calc(100% - 32px));height:520px;display:none;flex-direction:column;border:1px solid var(--b);border-radius:16px;
+    background:linear-gradient(180deg,#151726,#0f111a);color:var(--fg);z-index:2147483646;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,.45)}
+  #trey-panel.show{display:flex}
+  .hdr{display:flex;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--b)}
+  .hdr .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#22263a}
+  .body{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .msg{display:flex}.bubble{max-width:85%;background:var(--bubble);border:1px solid var(--b);border-radius:12px;padding:8px 10px;white-space:pre-wrap}
+  .user{justify-content:flex-end}.user .bubble{background:#203a6b;border-color:#274374}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-top:1px dashed var(--b);background:#0d0f18}
+  .input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--b);background:#0e1018}
+  .input input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--b);background:#0c0d14;color:#e7e7ea}
+  .input button{padding:10px 14px;border-radius:12px;border:1px solid var(--b);background:#14172a;color:#fff;font-weight:700;cursor:pointer}
+  #trey-fab .glyph::before{content:"🧑🏾‍🦱"}
+</style>
+
+<div id="trey-fab" aria-label="Open Trey" title="Open Trey">
+  <div class="glyph" aria-hidden="true"></div>
+  <div class="label">Open Trey</div>
+</div>
+
+<section id="trey-panel" aria-hidden="true">
+  <div class="hdr">
+    <div class="av">🧑🏾‍🦱</div>
+    <div><div style="font-weight:700">Trey</div><div class="small" id="trey-status">disconnected</div></div>
+    <div style="margin-left:auto"><button id="trey-close">✖️</button></div>
+  </div>
+  <div class="body" id="trey-log" role="log" aria-live="polite"></div>
+  <div class="row">
+    <input id="trey-url" placeholder="Supabase URL">
+    <input id="trey-anon" placeholder="Anon key">
+    <button id="trey-connect">Connect</button>
+  </div>
+  <div class="input">
+    <input id="trey-msg" placeholder="Ask Trey…">
+    <button id="trey-send">Send</button>
+  </div>
+</section>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const fab=$('trey-fab'), panel=$('trey-panel'), status=$('trey-status');
+  const logEl=$('trey-log'), msg=$('trey-msg'), urlIn=$('trey-url'), anonIn=$('trey-anon');
+  let supabase=null;
+
+  function push(who, text){
+    const row=document.createElement('div'); row.className='msg '+(who==='user'?'user':'ai');
+    const b=document.createElement('div'); b.className='bubble'; b.textContent=text;
+    row.appendChild(b); logEl.appendChild(row); logEl.scrollTop=logEl.scrollHeight;
+  }
+
+  const secretPatterns=[/(SUPABASE|SERVICE|ANON|API|SECRET|TOKEN|KEY)/i,/sk-[A-Za-z0-9]{20,}/,
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}/,/\.supabase\.co/i,/key=|token=|secret=/i];
+  const looksSensitive=s=>secretPatterns.some(rx=>rx.test(s));
+  const redact=s=>s.replace(/[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/g,'[REDACTED_JWT]')
+                   .replace(/sk-[A-Za-z0-9]{20,}/g,'[REDACTED_KEY]')
+                   .replace(/([A-Za-z0-9_\-]{24,})/g,'[REDACTED]');
+
+  async function connect(){
+    const url=(urlIn.value||'').trim(), anon=(anonIn.value||'').trim();
+    if(!url||!anon){ alert('Paste URL + anon'); return; }
+    localStorage.setItem('sb_url',url); localStorage.setItem('sb_anon',anon);
+    status.textContent='connecting…';
+    try{
+      const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm');
+      supabase=(window.__treySupabase ||= mod.createClient(url, anon, { auth: { persistSession:false, storageKey:'trey_auth_widget' } })); const host=new URL(url).host.split('.')[0];
+      status.textContent='connected to '+host;
+      push('ai','Connected to '+host+'. I’ll log chats to bff_notes (no secrets).');
+    }catch(e){ status.textContent='error'; push('ai','Could not load Supabase: '+(e&&e.message?e.message:e)); }
+  }
+
+  async function send(){
+    let v=(msg.value||'').trim(); if(!v) return;
+    if(looksSensitive(v)){ push('ai','That looks like a key/secret, so I won’t save it.'); msg.value=''; return; }
+    push('user', v); msg.value='';
+    if(supabase){
+      try{ await supabase.from('bff_notes').insert({ content:'user: '+v }); }catch(e){ console.warn(e); }
+      const reply='Trey here—got you. '+(v.length>120?v.slice(0,120)+'…':v);
+      try{ await supabase.from('bff_notes').insert({ content:'trey: '+redact(reply) }); }catch(e){ console.warn(e); }
+      push('ai', reply);
+    } else {
+      push('ai','(offline) Paste Supabase URL + anon, then Connect to save to bff_notes.');
+    }
+  }
+
+  fab.addEventListener('click', ()=>{ panel.classList.add('show'); msg.focus(); });
+  $('trey-close').addEventListener('click', ()=> panel.classList.remove('show'));
+  $('trey-send').addEventListener('click', send);
+  msg.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
+  $('trey-connect').addEventListener('click', connect);
+
+  const su=localStorage.getItem('sb_url')||'', sa=localStorage.getItem('sb_anon')||'';
+  if(su&&sa){ urlIn.value=su; anonIn.value=sa; status.textContent='saved creds'; }
+  push('ai','Yo—tap me, paste Supabase keys once, and I’ll log chats to bff_notes (but never secrets).');
+})();
+</script>
+
+<script>
+(function(){
+  // Auto-fill + auto-connect when saved creds exist
+  try{
+    const su = localStorage.getItem('sb_url') || '';
+    const sa = localStorage.getItem('sb_anon') || '';
+    if(su && sa){
+      const u = document.getElementById('trey-url');
+      const a = document.getElementById('trey-anon');
+      if(u && a){
+        u.value = su; a.value = sa;
+        setTimeout(()=>{ const btn=document.getElementById('trey-connect'); btn && btn.click(); }, 250);
+      }
+    }
+  }catch(e){ console.warn('autoconnect failed', e); }
+})();
+</script>

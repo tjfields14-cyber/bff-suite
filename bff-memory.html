@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BFF Memory — Supabase</title>
+<style>
+  body{font:16px system-ui;margin:0;background:#0b0b10;color:#e7e7ea}
+  main{max-width:800px;margin:36px auto;padding:0 16px}
+  input,button,textarea{font:16px system-ui}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  input{padding:10px;border-radius:8px;border:1px solid #2a2d3a;background:#0c0d14;color:#e7e7ea}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #2a2d3a;background:#14172a;color:#fff;cursor:pointer}
+  #list{margin-top:16px;border-top:1px solid #2a2d3a;padding-top:8px}
+  .item{padding:8px 10px;border:1px solid #2a2d3a;border-radius:10px;background:#12141d;margin:8px 0;white-space:pre-wrap}
+</style>
+<main>
+  <h1>BFF Memory — Supabase</h1>
+  <div class="row" style="margin:10px 0">
+    <input id="url" placeholder="https://YOURPROJECT.supabase.co" style="flex:1;min-width:320px">
+    <input id="anon" placeholder="Anon key (JWT)" style="flex:2;min-width:320px">
+    <button id="connect">Connect</button>
+    <span id="status" style="align-self:center;color:#9aa1af">disconnected</span>
+  </div>
+  <div class="row" style="margin:10px 0">
+    <input id="note" placeholder="Write a note…" style="flex:1">
+    <button id="save">Save</button>
+    <button id="refresh">Refresh</button>
+  </div>
+  <div id="list"></div>
+</main>
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm";
+  const $=id=>document.getElementById(id);
+  let sb=null;
+
+  function ui(status){ $('status').textContent=status }
+  function paint(rows){
+    const list=$('list'); list.innerHTML='';
+    (rows||[]).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
+      .forEach(r=>{
+        const div=document.createElement('div'); div.className='item';
+        const ts=new Date(r.created_at).toLocaleString();
+        div.textContent = ts+' — '+r.content;
+        list.appendChild(div);
+      });
+  }
+
+  async function connect(){
+    const url=($('url').value||'').trim(), anon=($('anon').value||'').trim();
+    if(!url||!anon) return alert('Paste URL + anon');
+    localStorage.setItem('sb_url',url); localStorage.setItem('sb_anon',anon);
+    sb=createClient(url,anon); ui('connected');
+  }
+
+  async function refresh(){
+    if(!sb) return alert('Connect first');
+    const { data, error } = await sb.from('bff_notes').select('*').limit(1000);
+    if(error){ ui('error'); console.error(error); return alert(error.message); }
+    paint(data);
+  }
+
+  async function save(){
+    if(!sb) return alert('Connect first');
+    const v=($('note').value||'').trim(); if(!v) return;
+    const { error } = await sb.from('bff_notes').insert({ content: v });
+    if(error){ console.error(error); return alert(error.message); }
+    $('note').value=''; refresh();
+  }
+
+  $('connect').onclick=connect; $('save').onclick=save; $('refresh').onclick=refresh;
+
+  const su=localStorage.getItem('sb_url')||'', sa=localStorage.getItem('sb_anon')||'';
+  if(su&&sa){ $('url').value=su; $('anon').value=sa; sb=createClient(su,sa); ui('saved creds'); refresh(); }
+</script>
