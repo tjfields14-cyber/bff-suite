@@ -75,8 +75,9 @@
     status.textContent='connecting…';
     try{
       const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm');
-      supabase=mod.createClient(url,anon); status.textContent='connected';
-      push('ai','Connected. I’ll log chats to bff_notes (no secrets).');
+      supabase=(window.__treySupabase ||= mod.createClient(url, anon, { auth: { persistSession:false, storageKey:'trey_auth_widget' } })); const host=new URL(url).host.split('.')[0];
+      status.textContent='connected to '+host;
+      push('ai','Connected to '+host+'. I’ll log chats to bff_notes (no secrets).');
     }catch(e){ status.textContent='error'; push('ai','Could not load Supabase: '+(e&&e.message?e.message:e)); }
   }
 
