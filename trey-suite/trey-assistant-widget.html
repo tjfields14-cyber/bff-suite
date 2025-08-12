@@ -33,5 +33,44 @@
   fab.addEventListener('click',()=>panel.classList.toggle('show'));
   frm.addEventListener('submit',e=>{e.preventDefault();const t=q.value.trim();if(!t)return;q.value='';push('user',t);setTimeout(()=>push('ai','(demo) '+t),300)});
   push('ai','Trey ready.');
+</script><!-- your existing JS ends -->
+</script><script>
+// inject floating hotfix CSS
+(() => {
+  const css = `
+    :root { --bff-z: 2147483647; }
+    .bff-fab { position: fixed !important; right: 18px !important; bottom: 18px !important; z-index: var(--bff-z) !important; }
+    .bff-panel { position: fixed !important; right: 18px !important; bottom: 86px !important; width: min(420px, calc(100vw - 32px)) !important; max-height: min(80vh, 720px) !important; z-index: calc(var(--bff-z) - 1) !important; }
+    @media (max-width: 520px) { .bff-panel { right: 8px !important; left: 8px !important; width: auto !important; } }
+  `;
+  const s = document.createElement('style');
+  s.id = 'bff-float-hotfix';
+  s.textContent = css;
+  document.head.appendChild(s);
+})();
 </script>
+
+
+<style id="bff-float-hotfix">
+  :root { --bff-z: 2147483647; }
+  .bff-fab {
+    position: fixed !important;
+    right: 18px !important;
+    bottom: 18px !important;
+    z-index: var(--bff-z) !important;
+  }
+  .bff-panel {
+    position: fixed !important;
+    right: 18px !important;
+    bottom: 86px !important;
+    width: min(420px, calc(100vw - 32px)) !important;
+    max-height: min(80vh, 720px) !important;
+    z-index: calc(var(--bff-z) - 1) !important;
+  }
+  @media (max-width: 520px) {
+    .bff-panel { right: 8px !important; left: 8px !important; width: auto !important; }
+  }
+</style>
+</body></html>
+
 </body></html>
