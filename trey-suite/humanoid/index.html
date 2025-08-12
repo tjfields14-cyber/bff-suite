@@ -9,7 +9,6 @@
   html,body{margin:0;height:100%;background:#0b0b0c;overflow:hidden;color:#e5e7eb;font:14px ui-sans-serif,system-ui}
   #ui{position:fixed;left:12px;top:12px;background:#111;border:1px solid #2a2a2b;border-radius:12px;padding:8px 10px;z-index:10}
   #ui button{margin-right:6px}
-  #stamp{opacity:.7;margin-left:8px}
   #log{position:fixed;left:12px;bottom:12px;max-width:720px;white-space:pre-wrap;background:#0b0b0cdc;border:1px solid #1f2937;border-radius:8px;padding:8px 10px}
 </style>
 </head>
@@ -19,25 +18,9 @@
   <button id="ttsBtn">🔊 Test TTS</button>
   <button id="debugBtn">🔎 Morph Debug</button>
   <button id="testBtn">🧪 Mouth Open</button>
-  <span id="stamp">stamp: 2025-08-12_15-07-04</span>
 </div>
 <div id="log">Booting…</div>
 <canvas id="c"></canvas>
-
-<!-- Bootstrap logger: imports app.mjs with a cache-busting query and prints results -->
-<script type="module">
-  const logEl = document.getElementById('log');
-  const log = (s)=> logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s;
-  log("🔧 Bootstrap running…");
-  try {
-    const ver = "v=2025-08-12_15-07-04"; // cache-bust
-    await import(./app.mjs?);
-    log("✅ app.mjs imported.");
-  } catch (e) {
-    log("❌ Failed to import app.mjs");
-    log(String(e && e.message ? e.message : e));
-  }
-</script>
-<noscript><div id="log">❌ JavaScript is disabled.</div></noscript>
+<script type="module" src="./bootstrap.mjs?v=20250812153841"></script>
 </body>
 </html>
