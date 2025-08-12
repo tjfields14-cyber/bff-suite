@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>BFF Humanoid (GLB + Mic)</title>
+<title>BFF Humanoid (Debug)</title>
 <style>
   html,body{margin:0;height:100%;background:#0b0b0c;color:#e5e7eb;font-family:ui-sans-serif,system-ui}
   .topbar{position:fixed;inset:12px auto auto 12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .chip{background:#111;border:1px solid #2a2a2b;border-radius:999px;padding:6px 10px;font-size:12px}
   .btn{cursor:pointer}
-  #log{position:fixed;left:12px;bottom:12px;max-width:680px;font-size:12px;opacity:.9;white-space:pre-wrap;background:#0b0b0c80;padding:8px 10px;border-radius:8px;border:1px solid #1f2937}
+  #log{position:fixed;left:12px;bottom:12px;max-width:720px;font-size:12px;opacity:.95;white-space:pre-wrap;background:#0b0b0cdc;padding:8px 10px;border-radius:8px;border:1px solid #1f2937}
   canvas{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>
 <div class="topbar">
-  <span class="chip">Humanoid (GLB + Mic)</span>
-  <button id="micBtn"   class="chip btn">🎤 Enable Mic</button>
-  <button id="ttsBtn"   class="chip btn">🔊 Say Hello</button>
+  <span class="chip">Humanoid (Debug)</span>
+  <button id="micBtn"   class="chip btn">🎤 Mic</button>
+  <button id="ttsBtn"   class="chip btn">🔊 Test TTS</button>
   <button id="debugBtn" class="chip btn">🔎 Morph Debug</button>
-  <button id="testBtn"  class="chip btn">🧪 Test Mouth</button>
-  <span id="aiBadge" class="chip" style="display:none">AI-generated</span>
+  <button id="testBtn"  class="chip btn">🧪 Mouth Open</button>
+  <button id="errBtn"   class="chip btn">🧰 Show Last Error</button>
 </div>
-<div id="log">Loading…</div>
+<div id="log">Booting…</div>
 <script type="module" src="./humanoid.js"></script>
 </body>
 </html>
