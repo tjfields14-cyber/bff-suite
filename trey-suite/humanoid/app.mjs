@@ -8,15 +8,19 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs start (esm.sh + mouth marker)");
+log("🚀 app.mjs start (morphs on any Mesh)");
 
 const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href;
 const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
-let fallback=null, skinned=null, morphMap={}, jaw=null, headBone=null;
+let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null, mouthParent=null;
+
+// NEW: keep reference to the specific mesh that has morphs
+let morphMesh=null;
+let morphMap = {}; // { open: index }
 
 init();
 function init(){
@@ -62,16 +66,16 @@ function tryLoadGLB(url, isSample=false){
       const root = g.scene || (g.scenes && g.scenes[0]);
       if (!root){ log("❌ GLB has no scene"); return reject(new Error("no scene")); }
 
-      // Find skinned mesh + morphs
+      // Find morphs on ANY Mesh (Skinned or not)
       root.traverse((o)=>{
         if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
-        if (o.isSkinnedMesh){
-          skinned = o;
-          const dict = o.morphTargetDictionary || {};
-          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen","open"];
+        if (o.morphTargetDictionary && !morphMesh){
+          morphMesh = o; // first mesh with morphs
+          const dict = o.morphTargetDictionary;
+          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen","open","O","o"];
           for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
           if (morphMap.open===undefined){
-            const cand = Object.keys(dict).find(k=>/jaw|open|aa|mouth/i.test(k));
+            const cand = Object.keys(dict).find(k=>/jaw|open|aa|mouth|viseme/i.test(k));
             if (cand) morphMap.open = dict[cand];
           }
         }
@@ -98,7 +102,7 @@ function tryLoadGLB(url, isSample=false){
       scene.add(root);
       if (fallback){ scene.remove(fallback); fallback=null; }
 
-      // Create mouth marker (small ring) and attach near head if no real jaw or morphs
+      // Create mouth marker (ring) and attach/display for visibility/show
       if (!mouthMarker){
         mouthMarker = new Mesh(
           new TorusGeometry(0.10, 0.022, 16, 32),
@@ -106,19 +110,9 @@ function tryLoadGLB(url, isSample=false){
         );
         mouthMarker.visible = true;
       }
-
-      if (jaw || morphMap.open !== undefined){
-        // Real drive path exists — still show marker but anchor to jaw/head for visibility
-        mouthParent = jaw || headBone || root;
-        mouthParent.add(mouthMarker);
-        mouthMarker.position.set(0, -0.10, 0.22);
-        log("• Mouth marker attached to: " + (jaw ? ("jaw bone '"+jaw.name+"'") : (headBone ? ("head/neck bone '"+headBone.name+"'") : "root")));
-      } else {
-        // No morphs, no jaw — position marker at face-height relative to model center
-        root.add(mouthMarker);
-        mouthMarker.position.copy(center.clone().add(new Vector3(0, size*0.40, size*0.14)));
-        log("• No morphs/jaw — using mouth marker near face center");
-      }
+      const parent = jaw || headBone || root;
+      parent.add(mouthMarker);
+      mouthMarker.position.set(0, -0.10, 0.22);
 
       log((isSample?"✓ SAMPLE ":"✓ ") + "Model loaded. Open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
       log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
@@ -153,22 +147,21 @@ function driveMouth(){
   const micOpen = Math.min(1, amplitude()*12);
   const open = Math.max(testOpen, micOpen);
 
-  // Real morph
-  if (skinned && morphMap.open !== undefined && skinned.morphTargetInfluences){
-    skinned.morphTargetInfluences[morphMap.open] = open;
+  // Drive morphs if present (on ANY mesh)
+  if (morphMesh && morphMap.open !== undefined && morphMesh.morphTargetInfluences){
+    morphMesh.morphTargetInfluences[morphMap.open] = open;
   }
-  // Real bone
+  // Bone route if present
   if (jaw){
     jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35);
   }
-  // Visual marker
+  // Visual ring
   if (mouthMarker){
     const s = 1 + open*0.9;
     mouthMarker.scale.set(s, s*1.2, s);
     mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
   }
-
-  // Fallback visual
+  // Fallback head
   if (fallback){
     fallback.rotation.y += 0.01;
     fallback.scale.setScalar(1 + open*0.2);
@@ -177,16 +170,16 @@ function driveMouth(){
 
 function showMorphAndBoneDebug(){
   let out = "Debug\n=====\n";
-  // Morphs
+  // Morphs on ANY mesh
   let foundMorph = 0;
   scene.traverse((o)=>{
-    if (o.isSkinnedMesh && o.morphTargetDictionary){
+    if (o.morphTargetDictionary){
       foundMorph++;
       out += `Mesh: ${o.name}\n`;
       const dict=o.morphTargetDictionary;
       const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
       for (const k of keys){
-        const mark = (morphMap.open!==undefined && dict[k]===morphMap.open) ? "  (chosen: open)" : "";
+        const mark = (morphMap.open!==undefined && dict[k]===morphMap.open && o===morphMesh) ? "  (chosen: open)" : "";
         out += `  - ${k}${mark}\n`;
       }
     }
