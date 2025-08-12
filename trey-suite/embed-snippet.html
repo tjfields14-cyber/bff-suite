@@ -1,3 +1,56 @@
-<!-- Paste this inside any page to load the widget via iframe once you replace the stub -->
-<div id="trey-container" style="position:fixed; right:18px; bottom:18px; z-index:99999;"></div>
-<script>(function(){var f=document.createElement('iframe');f.src='trey-assistant-widget.html';f.style.width='0';f.style.height='0';f.style.border='0';f.style.position='fixed';f.style.right='0';f.style.bottom='0';f.style.zIndex='2147483647';document.body.appendChild(f);}())</script>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trey Panel</title>
+  <style>
+    html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui;-webkit-font-smoothing:antialiased}
+    .wrap{display:flex;flex-direction:column;height:70vh;background:#fff}
+    header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #eee}
+    header h2{margin:0;font-size:16px}
+    header button{border:0;background:#111;color:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
+    main{flex:1;overflow:auto;padding:12px 14px}
+    .muted{color:#666;font-size:13px}
+    textarea{width:100%;min-height:90px;border:1px solid #ddd;border-radius:10px;padding:10px;font:inherit}
+    .row{display:flex;gap:8px;margin-top:10px}
+    .row button{border:0;background:#111;color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h2>Trey Assistant</h2>
+      <button onclick="parent.document.getElementById('bffPanel').style.display='none'">Close</button>
+    </header>
+    <main>
+      <div class="muted" id="status">Checking Supabase config…</div>
+      <p>Type a note, then click <b>Save</b> (demo only).</p>
+      <textarea id="note" placeholder="Write something…"></textarea>
+      <div class="row">
+        <button onclick="save()">Save</button>
+        <button onclick="alert('Coming soon ✨')">Ask Trey</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Read config that lives on the parent page (same origin)
+    const cfg = (parent && parent.BFF_SUPABASE) ? parent.BFF_SUPABASE : {};
+    document.getElementById('status').textContent =
+      (cfg.url && cfg.anon) ? `Connected to ${cfg.url}` : 'No Supabase config found.';
+
+    function save(){
+      const txt = document.getElementById('note').value.trim();
+      if(!txt){ alert('Type a note first.'); return; }
+      // Demo: just stash in localStorage to prove it works
+      const k = 'trey_notes';
+      const all = JSON.parse(localStorage.getItem(k) || '[]');
+      all.push({ t: Date.now(), text: txt });
+      localStorage.setItem(k, JSON.stringify(all));
+      document.getElementById('note').value = '';
+      alert('Saved locally ✅');
+    }
+  </script>
+</body>
+</html>
