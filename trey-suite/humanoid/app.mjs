@@ -1,21 +1,22 @@
 ﻿import {
   WebGLRenderer, Scene, PerspectiveCamera, AmbientLight, DirectionalLight,
-  Color, IcosahedronGeometry, MeshStandardMaterial, Mesh, Box3, Vector3, MathUtils
+  Color, IcosahedronGeometry, MeshStandardMaterial, Mesh, Box3, Vector3, MathUtils,
+  TorusGeometry
 } from "https://esm.sh/three@0.160.0";
 import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs start (esm.sh + bone)");
+log("🚀 app.mjs start (esm.sh + mouth marker)");
 
-// Try local model first, then public sample
 const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href;
 const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
-let fallback=null, skinned=null, morphMap={}, jaw=null;
+let fallback=null, skinned=null, morphMap={}, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
+let mouthMarker=null, mouthParent=null;
 
 init();
 function init(){
@@ -61,12 +62,11 @@ function tryLoadGLB(url, isSample=false){
       const root = g.scene || (g.scenes && g.scenes[0]);
       if (!root){ log("❌ GLB has no scene"); return reject(new Error("no scene")); }
 
-      // Find meshes/morphs AND likely jaw/mouth bones
+      // Find skinned mesh + morphs
       root.traverse((o)=>{
         if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
         if (o.isSkinnedMesh){
           skinned = o;
-          // Choose a mouth-open morph if present
           const dict = o.morphTargetDictionary || {};
           const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen","open"];
           for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
@@ -77,15 +77,15 @@ function tryLoadGLB(url, isSample=false){
         }
       });
 
-      if (!jaw){
-        // Pass 1: explicit jaw/mouth/chin names
-        root.traverse((o)=>{
-          if (o.isBone && /(jaw|mouth|chin|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)){ jaw = o; }
-        });
-      }
-      if (!jaw){
-        // Pass 2: head as fallback bone
-        root.traverse((o)=>{ if (o.isBone && /head/i.test(o.name)){ jaw = o; } });
+      // Find jaw/head/neck bones to anchor a mouth marker if needed
+      root.traverse((o)=>{
+        if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o;
+      });
+      root.traverse((o)=>{
+        if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o;
+      });
+      if (!headBone){
+        root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; });
       }
 
       // Frame model
@@ -97,8 +97,31 @@ function tryLoadGLB(url, isSample=false){
 
       scene.add(root);
       if (fallback){ scene.remove(fallback); fallback=null; }
+
+      // Create mouth marker (small ring) and attach near head if no real jaw or morphs
+      if (!mouthMarker){
+        mouthMarker = new Mesh(
+          new TorusGeometry(0.05, 0.012, 12, 24),
+          new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35})
+        );
+        mouthMarker.visible = true;
+      }
+
+      if (jaw || morphMap.open !== undefined){
+        // Real drive path exists — still show marker but anchor to jaw/head for visibility
+        mouthParent = jaw || headBone || root;
+        mouthParent.add(mouthMarker);
+        mouthMarker.position.set(0, -0.08, 0.12);
+        log("• Mouth marker attached to: " + (jaw ? ("jaw bone '"+jaw.name+"'") : (headBone ? ("head/neck bone '"+headBone.name+"'") : "root")));
+      } else {
+        // No morphs, no jaw — position marker at face-height relative to model center
+        root.add(mouthMarker);
+        mouthMarker.position.copy(center.clone().add(new Vector3(0, size*0.38, size*0.06)));
+        log("• No morphs/jaw — using mouth marker near face center");
+      }
+
       log((isSample?"✓ SAMPLE ":"✓ ") + "Model loaded. Open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
-      log("• Jaw bone: " + (jaw ? jaw.name : "none"));
+      log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
       resolve();
     }, undefined, (err)=>{
       log("ℹ Failed to load "+(isSample?"SAMPLE ":"")+"GLB ("+ (err?.message || "network/error") +")");
@@ -130,14 +153,21 @@ function driveMouth(){
   const micOpen = Math.min(1, amplitude()*6);
   const open = Math.max(testOpen, micOpen);
 
-  // Blendshape route
+  // Real morph
   if (skinned && morphMap.open !== undefined && skinned.morphTargetInfluences){
     skinned.morphTargetInfluences[morphMap.open] = open;
   }
-  // Bone route (if we have a jaw-like bone)
+  // Real bone
   if (jaw){
     jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35);
   }
+  // Visual marker
+  if (mouthMarker){
+    const s = 1 + open*0.9;
+    mouthMarker.scale.set(s, s*1.2, s);
+    mouthMarker.material.emissiveIntensity = 0.2 + open*0.8;
+  }
+
   // Fallback visual
   if (fallback){
     fallback.rotation.y += 0.01;
@@ -168,7 +198,7 @@ function showMorphAndBoneDebug(){
   scene.traverse((o)=>{
     if (o.isBone){
       foundBone++;
-      const mark = (jaw && o===jaw) ? "  (chosen: jaw)" : "";
+      const mark = (jaw && o===jaw) ? "  (chosen: jaw)" : (headBone && o===headBone ? "  (anchor)" : "");
       out += `Bone: ${o.name}${mark}\n`;
     }
   });
