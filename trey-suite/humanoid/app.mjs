@@ -18,7 +18,7 @@ let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
 // NEW: drive morphs on ALL meshes that expose an open-like target
-let morphTargets = []; // [{ mesh, index, name }]
+let morphTargets = []; // [{ mesh, index, name, origEmissive?:number, origIntensity?:number }]
 let morphNameOpen = null;
 
 init();
@@ -89,7 +89,7 @@ function loadGLB(url){
       if (o.morphTargetDictionary){
         const pick = pickOpen(o.morphTargetDictionary);
         if (pick && o.morphTargetInfluences){
-          morphTargets.push({ mesh:o, index:pick.index, name:pick.name });
+          morphTargets.push({ mesh:o, index:pick.index, name:pick.name, origEmissive:(o.material?.emissive?.getHex?.() ?? null), origIntensity:(o.material?.emissiveIntensity ?? null) });
           if (!morphNameOpen) morphNameOpen = pick.name;
         }
       }
@@ -158,7 +158,35 @@ function driveMouth(){
 
   // Drive ALL picked morphs
   for (const t of morphTargets){
-    if (t.mesh.morphTargetInfluences){ t.mesh.morphTargetInfluences[t.index] = open; }
+    if (t.mesh.morphTargetInfluences){
+      t.mesh.morphTargetInfluences[t.index] = open;
+    }
+    // Visualize morph power on the mesh material
+    const m = t.mesh.material;
+    if (m && m.emissive){
+      try{
+        m.emissive.setHex(0x33ff88);
+        m.emissiveIntensity = 0.25 + open*1.5; // brightens as mouth "opens"
+      }catch{}
+    }
+  }
+
+  // Optional bone jaw
+  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
+
+  // Ring
+  if (mouthMarker){
+    const s = 1 + open*0.9;
+    mouthMarker.scale.set(s, s*1.2, s);
+    mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
+  }
+
+  // Fallback head keeps spinning so you always see activity
+  if (fallback){
+    fallback.rotation.y += 0.01;
+    fallback.scale.setScalar(1 + open*0.2);
+  }
+}
   }
   // Optional bone jaw
   if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
@@ -213,3 +241,4 @@ function loop(now){
   driveMouth();
   renderer.render(scene,camera);
 }
+
