@@ -187,6 +187,32 @@ function driveMouth(){
     fallback.scale.setScalar(1 + open*0.2);
   }
 }
+    // Visualize morph power on the mesh material
+    const m = t.mesh.material;
+    if (m && m.emissive){
+      try{
+        m.emissive.setHex(0x33ff88);
+        m.emissiveIntensity = 0.25 + open*1.5; // brightens as mouth "opens"
+      }catch{}
+    }
+  }
+
+  // Optional bone jaw
+  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
+
+  // Ring
+  if (mouthMarker){
+    const s = 1 + open*0.9;
+    mouthMarker.scale.set(s, s*1.2, s);
+    mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
+  }
+
+  // Fallback head keeps spinning so you always see activity
+  if (fallback){
+    fallback.rotation.y += 0.01;
+    fallback.scale.setScalar(1 + open*0.2);
+  }
+}
   }
   // Optional bone jaw
   if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
@@ -241,4 +267,5 @@ function loop(now){
   driveMouth();
   renderer.render(scene,camera);
 }
+
 
