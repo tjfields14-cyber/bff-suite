@@ -46,6 +46,12 @@
       <img id="hubAvatar" src="assets/trey.svg" alt="">
       <h1 id="hubTitle">BFF Suite Hub — <span id="hubPersona">Trey</span></h1>
     </div>
+<div class="seg" style="margin-left:8px"><select id="avatarStyle" style="padding:6px 8px;border:1px solid #e5e7eb;border-radius:999px;font-size:13px">
+<option value="auto">Original</option>
+<option value="anim">Animated 2D</option>
+<option value="3d1">3D v1</option>
+<option value="3d2">3D v2</option>
+</select></div>
     <!-- Persona switcher -->
     <div class="seg" id="personaSeg">
       <button data-per="0" class="active">Trey</button>
@@ -483,7 +489,57 @@
   document.addEventListener('DOMContentLoaded', update);
 })();
 </script>
+<script>
+(function(){
+  function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v===null?d:v }catch(e){ return d } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
+
+  function pickAvatarStyle(p, idx){
+    // idx 0=Trey, 1=Imani
+    const style = lsGet("bff_avatar_style","auto");
+    const base = idx===1 ? "imani" : "trey";
+    const map = {
+      "anim": `assets/${base}_anim.png`,
+      "3d1":  `assets/${base}_3d1.png`,
+      "3d2":  `assets/${base}_3d2.png`
+    };
+    const override = map[style];
+    return override || p?.avatar || `assets/${base}.svg`;
+  }
+
+  // Patch applyPersona to respect style
+  const _applyPersona = window.applyPersona;
+  window.applyPersona = function(j,n){
+    if(typeof _applyPersona==="function") _applyPersona(j,n);
+    try{
+      const ps = Array.isArray(j?.personas) ? j.personas : [];
+      const p  = ps[n] || ps[0] || {};
+      const a  = pickAvatarStyle(p, n||0);
+      const hubAv = document.getElementById("hubAvatar");
+      const pAv   = document.getElementById("pAvatar");
+      if (hubAv) hubAv.src = a;
+      if (pAv)   pAv.src   = a;
+    }catch(e){}
+  };
+
+  // Wire selector
+  document.addEventListener("DOMContentLoaded", ()=>{
+    const sel = document.getElementById("avatarStyle");
+    if(!sel) return;
+    sel.value = lsGet("bff_avatar_style","auto");
+    sel.addEventListener("change", ()=>{
+      lsSet("bff_avatar_style", sel.value);
+      try {
+        const pid = parseInt(localStorage.getItem("bff_persona_id")||"0",10)||0;
+        const j = JSON.parse(localStorage.getItem("bff_profile_json")||"{}");
+        window.applyPersona(j, pid);
+      } catch {}
+    });
+  });
+})();
+</script>
 </body>
 </html>
+
 
 
