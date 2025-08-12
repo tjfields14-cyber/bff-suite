@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -29,6 +29,7 @@
       <div class="row">
         <button id="btnImport">Import Profile</button>
         <button id="btnLoadTJF">Load TJF</button>
+        <button id="btnProfile">Profile Card</button>
         <button onclick="parent.document.getElementById('bffPanel').style.display='none'">Close</button>
       </div>
     </header>
@@ -51,10 +52,8 @@
     // ---------- Safe JSON parser (strips BOM, comments, trailing commas) ----------
     function safeParseProfile(text){
       try {
-        let s = (text || "").replace(/^\uFEFF/, "");     // strip BOM
-        // strip /* */ and // comments
+        let s = (text || "").replace(/^\uFEFF/, "");
         s = s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
-        // remove trailing commas before ] or }
         s = s.replace(/,\s*([}\]])/g, "$1");
         return JSON.parse(s);
       } catch (e) {
@@ -137,4 +136,3 @@
   </script>
 </body>
 </html>
-
