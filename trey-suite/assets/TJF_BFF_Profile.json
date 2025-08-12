@@ -17,7 +17,9 @@
                                                "friendly":  true,
                                                "direct":  true,
                                                "concise":  true
-                                           }
+                                           },
+                         "synthetic_media":  true,
+                         "media_label":  "AI-generated live-action portrait"
                      },
                      {
                          "id":  "imani",
@@ -35,7 +37,9 @@
                                                "friendly":  true,
                                                "direct":  true,
                                                "pragmatic":  true
-                                           }
+                                           },
+                         "synthetic_media":  true,
+                         "media_label":  "AI-generated live-action portrait"
                      }
                  ],
     "rules":  [
