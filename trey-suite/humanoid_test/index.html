@@ -1,0 +1,20 @@
+﻿<!doctype html>
+<meta charset="utf-8">
+<title>Humanoid Test</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{margin:0;height:100%;background:#0b0b0c;overflow:hidden;color:#e5e7eb;font:14px ui-sans-serif,system-ui}
+  #ui{position:fixed;left:12px;top:12px;background:#111;border:1px solid #2a2a2b;border-radius:12px;padding:8px 10px}
+  #ui button{margin-right:6px}
+  #stamp{opacity:.8}
+  #status{margin-left:8px;padding:4px 8px;border-radius:999px;border:1px solid #2a2a2b;background:#0c3;display:none}
+</style>
+<div id="ui">
+  <button id="ping">Ping JS</button>
+  <button id="color">Toggle Color</button>
+  <span id="stamp">stamp: 2025-08-12 14:20:46</span>
+  <span id="status">JS loaded ✓</span>
+</div>
+<canvas id="c"></canvas>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js" crossorigin="anonymous"></script>
+<script defer src="./app.js"></script>
