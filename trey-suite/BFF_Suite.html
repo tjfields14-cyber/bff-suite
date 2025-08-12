@@ -8,10 +8,14 @@
   :root{ --accent:#4f46e5 }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui;-webkit-font-smoothing:antialiased;background:#fafafa;color:#111}
-  header{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:10}
+  header{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:10;flex-wrap:wrap}
+  header .left{display:flex;align-items:center;gap:12px;min-width:0}
   header .id{display:flex;align-items:center;gap:10px}
   header .id img{width:36px;height:36px;border-radius:50%;border:1px solid #e5e5e5;object-fit:cover}
-  header h1{font-size:18px;margin:0}
+  header h1{font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg{display:flex;border:1px solid #e5e7eb;border-radius:999px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:6px 10px;font-size:13px;cursor:pointer}
+  .seg button.active{background:var(--accent);color:#fff}
   .btn{border:0;background:var(--accent);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
   .btn.secondary{background:#111}
   .btn.ghost{background:transparent;color:#111;border:1px solid #ddd}
@@ -37,9 +41,16 @@
 </head>
 <body>
 <header>
-  <div class="id">
-    <img id="hubAvatar" src="assets/trey.svg" alt="">
-    <h1 id="hubTitle">BFF Suite Hub — <span id="hubPersona">Trey</span></h1>
+  <div class="left">
+    <div class="id">
+      <img id="hubAvatar" src="assets/trey.svg" alt="">
+      <h1 id="hubTitle">BFF Suite Hub — <span id="hubPersona">Trey</span></h1>
+    </div>
+    <!-- Persona switcher -->
+    <div class="seg" id="personaSeg">
+      <button data-per="0" class="active">Trey</button>
+      <button data-per="1">Imani</button>
+    </div>
   </div>
   <div class="row">
     <button class="btn" id="btnLoadTJF">Load TJF</button>
@@ -80,7 +91,7 @@
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="btnSave">Save to Vault</button>
-      <span class="muted">Saves to your Supabase via secure Edge Function if configured; otherwise saves locally.</span>
+      <span class="muted">Saves to your Supabase via Edge Function if configured; otherwise saves locally.</span>
     </div>
 
     <h2 style="margin-top:18px">Profile</h2>
@@ -96,7 +107,7 @@
         </div>
       </div>
       <div>
-        <div class="muted">Profile JSON stored locally and attached to each vault entry’s tags.</div>
+        <div class="muted">Profile JSON is stored locally and attached to each vault entry’s tags.</div>
         <div style="margin-top:8px"><span class="pill" id="profileState">No profile loaded</span></div>
       </div>
     </div>
@@ -105,7 +116,7 @@
   <!-- STOP Manager -->
   <section class="panel" id="tab-stop">
     <h2>STOP Rules</h2>
-    <textarea id="stopRules" placeholder="Write high-level rules you want Trey to follow…"></textarea>
+    <textarea id="stopRules" placeholder="Write high-level rules you want the assistant to follow…"></textarea>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="btnSaveStop">Save STOP</button>
       <button class="btn ghost" id="btnLoadStop">Load STOP</button>
@@ -204,26 +215,59 @@
   function parseProfileLoose(text){
     if(!text) return null;
     try{ return JSON.parse(text); }catch{}
-    try{
-      let s = text.replace(/^\uFEFF/,"").replace(/,\s*([}\]])/g,"$1");
-      return JSON.parse(s);
-    }catch{ return null; }
+    try{ let s=text.replace(/^\uFEFF/,"").replace(/,\s*([}\]])/g,"$1"); return JSON.parse(s); }catch{ return null; }
   }
+  function getProfileText(){ return localStorage.getItem("bff_profile_json")||""; }
+  function getProfile(){ return parseProfileLoose(getProfileText()); }
   function setProfileText(text){
     localStorage.setItem("bff_profile_json", text||"");
     const j = parseProfileLoose(text);
-    if(j) applyProfile(j); else status("Profile stored (raw JSON).");
+    if(j){ applyPersona(j, getPersonaId()); status("Profile loaded ✅"); }
+    else  { status("Profile stored (raw JSON)."); }
   }
-  function applyProfile(j){
-    const p = j?.personas?.[0] || {};
-    $("hubPersona").textContent = p.name || "Profile";
-    if(p.avatar){ $("hubAvatar").src = p.avatar; $("pAvatar").src = p.avatar; }
-    $("pName").textContent = p.name || "Profile";
+
+  // Persona selection
+  function getPersonaId(){
+    const v = localStorage.getItem("bff_persona_id"); 
+    const n = (v===null || v==="") ? 0 : parseInt(v,10);
+    return isNaN(n) ? 0 : Math.max(0, Math.min(n, 99));
+  }
+  function setPersonaId(n){
+    localStorage.setItem("bff_persona_id", String(n));
+    // Re-render with the newly selected persona
+    const j = getProfile();
+    if(j) applyPersona(j, n); else renderPersonaFallback(n);
+    // Update switcher buttons
+    document.querySelectorAll('#personaSeg button').forEach(b=>{
+      b.classList.toggle('active', parseInt(b.dataset.per,10)===n);
+    });
+  }
+
+  function renderPersonaFallback(n){
+    const names = ["Trey","Imani"];
+    const avatars = ["assets/trey.svg", "assets/imani.svg"];
+    const name = names[n] || "Profile";
+    const avatar = avatars[n] || "assets/trey.svg";
+    $("hubPersona").textContent = name;
+    $("hubAvatar").src = avatar;
+    $("pAvatar").src = avatar;
+    $("pName").textContent = name;
+  }
+
+  function applyPersona(j, n){
+    const ps = Array.isArray(j?.personas) ? j.personas : [];
+    const p = ps[n] || ps[0] || {};
+    const name = p.name || "Profile";
+    const avatar = p.avatar || (n===1 ? "assets/imani.svg" : "assets/trey.svg");
+    $("hubPersona").textContent = name;
+    $("hubAvatar").src = avatar;
+    $("pAvatar").src = avatar;
+    $("pName").textContent = name;
     $("pVibes").textContent = (p.vibes||[]).join(", ");
     $("profileState").textContent = "Loaded";
     $("profileState").className = "pill";
-    status("Profile loaded ✅");
   }
+
   async function loadTJF(){
     const candidates = [
       "/bff-suite/assets/TJF_BFF_Profile.json",
@@ -239,28 +283,18 @@
   }
   function resetProfile(){
     localStorage.removeItem("bff_profile_json");
-    $("hubPersona").textContent="Trey";
-    $("hubAvatar").src="assets/trey.svg";
-    $("pAvatar").src="assets/trey.svg";
-    $("pName").textContent="Trey";
-    $("pVibes").textContent="chill, hype, deep…";
+    applyPersona({ personas:[{name:"Trey",avatar:"assets/trey.svg"}] }, 0);
     $("profileState").textContent = "No profile loaded";
     status("Profile reset.");
   }
 
   // STOP rules
-  function saveSTOP(){
-    localStorage.setItem("bff_stop_rules", $("stopRules").value||"");
-    status("STOP saved.");
-  }
-  function loadSTOP(){
-    $("stopRules").value = localStorage.getItem("bff_stop_rules") || "";
-    status("STOP loaded.");
-  }
+  function saveSTOP(){ localStorage.setItem("bff_stop_rules", $("stopRules").value||""); status("STOP saved."); }
+  function loadSTOP(){ $("stopRules").value = localStorage.getItem("bff_stop_rules") || ""; status("STOP loaded."); }
 
   // Avatar deploy
   function applyAvatarsToProfile(){
-    const text = localStorage.getItem("bff_profile_json");
+    const text = getProfileText();
     if(!text){ alert("Load or import a profile first."); return; }
     const j = parseProfileLoose(text) || {};
     j.personas = j.personas || [];
@@ -272,35 +306,21 @@
     localStorage.setItem("bff_profile_json", out);
     $("prevTrey").src = j.personas[0].avatar;
     $("prevImani").src = j.personas[1].avatar;
-    applyProfile(j);
+    applyPersona(j, getPersonaId());
     status("Avatars applied to profile.");
   }
   function downloadProfile(){
-    const text = localStorage.getItem("bff_profile_json") || "{}";
+    const text = getProfileText() || "{}";
     const blob = new Blob([text], {type:"application/json"});
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "TJF_BFF_Profile.json";
-    a.click();
+    a.href = URL.createObjectURL(blob); a.download = "TJF_BFF_Profile.json"; a.click();
     URL.revokeObjectURL(a.href);
   }
 
   // Brand
-  function saveBrand(){
-    const brand = { accent: $("brandAccent").value || "#4f46e5" };
-    localStorage.setItem("bff_brand", JSON.stringify(brand));
-    applyBrand(brand);
-    status("Brand saved.");
-  }
-  function loadBrand(){
-    const j = JSON.parse(localStorage.getItem("bff_brand") || "{}");
-    $("brandAccent").value = j.accent || "#4f46e5";
-    applyBrand(j);
-    status("Brand loaded.");
-  }
-  function applyBrand(j){
-    document.documentElement.style.setProperty("--accent", j.accent || "#4f46e5");
-  }
+  function saveBrand(){ const b={ accent: $("brandAccent").value || "#4f46e5" }; localStorage.setItem("bff_brand", JSON.stringify(b)); applyBrand(b); status("Brand saved."); }
+  function loadBrand(){ const b=JSON.parse(localStorage.getItem("bff_brand")||"{}"); $("brandAccent").value=b.accent||"#4f46e5"; applyBrand(b); status("Brand loaded."); }
+  function applyBrand(b){ document.documentElement.style.setProperty("--accent", b.accent || "#4f46e5"); }
 
   // Save to Vault (Edge Function) or local fallback
   async function saveToVault(){
@@ -309,7 +329,7 @@
     const file = $("file").files[0];
     if(!title && !notes && !file){ alert("Type a title or notes, or attach a file."); return; }
 
-    const prof = localStorage.getItem("bff_profile_json");
+    const prof = getProfileText();
     const owner = getOwner();
 
     if(VAULT_ENDPOINT && anon && owner){
@@ -345,10 +365,8 @@
     localStorage.setItem(k, JSON.stringify(all));
     renderLocal();
   }
-
   function renderLocal(){
-    const k = "trey_notes";
-    const all = JSON.parse(localStorage.getItem(k) || "[]").slice().reverse();
+    const all = JSON.parse(localStorage.getItem("trey_notes") || "[]").slice().reverse();
     const tb = $("hist").querySelector("tbody");
     tb.innerHTML = all.map(r=>{
       const d = new Date(r.t);
@@ -359,14 +377,12 @@
     }).join("") || `<tr><td colspan="3" class="muted">No local entries yet.</td></tr>`;
   }
   function exportLocal(){
-    const k="trey_notes"; const text=localStorage.getItem(k)||"[]";
+    const text=localStorage.getItem("trey_notes")||"[]";
     const blob = new Blob([text], {type:"application/json"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download="bff_notes.json"; a.click();
     URL.revokeObjectURL(a.href);
   }
-  function clearLocal(){
-    if(confirm("Clear all local notes?")){ localStorage.removeItem("trey_notes"); renderLocal(); }
-  }
+  function clearLocal(){ if(confirm("Clear all local notes?")){ localStorage.removeItem("trey_notes"); renderLocal(); } }
 
   // tabs
   document.querySelectorAll("nav button[data-tab]").forEach(btn=>{
@@ -380,7 +396,7 @@
     });
   });
 
-  // wire buttons
+  // wire header buttons
   $("btnLoadTJF").onclick = loadTJF;
   $("btnImport").onclick  = ()=>{
     const inp = document.createElement("input");
@@ -402,19 +418,29 @@
   $("btnExportLocal").onclick  = exportLocal;
   $("btnClearLocal").onclick   = clearLocal;
 
+  // persona switcher click handlers
+  document.querySelectorAll("#personaSeg button").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      const n = parseInt(b.dataset.per,10)||0;
+      setPersonaId(n);
+    });
+  });
+
   // boot
   (function boot(){
-    // profile
-    const text = localStorage.getItem("bff_profile_json");
-    const j = parseProfileLoose(text);
-    if(j) applyProfile(j);
     // brand
     const b = JSON.parse(localStorage.getItem("bff_brand") || "{}");
     applyBrand(b);
     if (b.accent) $("brandAccent").value = b.accent;
-    // avatar tab fields
+    // default avatar paths in Avatar tab
     $("avatarTrey").value  = "assets/trey.svg";
     $("avatarImani").value = "assets/imani.svg";
+    // persona selection
+    const pid = getPersonaId();
+    document.querySelectorAll('#personaSeg button').forEach(x=>x.classList.toggle('active', parseInt(x.dataset.per,10)===pid));
+    // profile
+    const j = getProfile();
+    if(j) applyPersona(j, pid); else renderPersonaFallback(pid);
   })();
 </script>
 </body>
