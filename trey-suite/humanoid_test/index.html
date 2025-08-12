@@ -1,7 +1,10 @@
 ﻿<!doctype html>
+<html>
+<head>
 <meta charset="utf-8">
-<title>Humanoid Test</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Humanoid Test (modules)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='%230b0b0c'/%3E%3Ctext x='50%25' y='58%25' dominant-baseline='middle' text-anchor='middle' font-size='40' fill='%23e5e7eb' font-family='Segoe UI,Arial'%3E🧊%3C/text%3E%3C/svg%3E" />
 <style>
   html,body{margin:0;height:100%;background:#0b0b0c;overflow:hidden;color:#e5e7eb;font:14px ui-sans-serif,system-ui}
   #ui{position:fixed;left:12px;top:12px;background:#111;border:1px solid #2a2a2b;border-radius:12px;padding:8px 10px}
@@ -9,12 +12,15 @@
   #stamp{opacity:.8}
   #status{margin-left:8px;padding:4px 8px;border-radius:999px;border:1px solid #2a2a2b;background:#0c3;display:none}
 </style>
+</head>
+<body>
 <div id="ui">
   <button id="ping">Ping JS</button>
   <button id="color">Toggle Color</button>
-  <span id="stamp">stamp: 2025-08-12 14:20:46</span>
+  <span id="stamp">stamp: 2025-08-12 14:36:49</span>
   <span id="status">JS loaded ✓</span>
 </div>
 <canvas id="c"></canvas>
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js" crossorigin="anonymous"></script>
-<script defer src="./app.js"></script>
+<script type="module" src="./app.mjs"></script>
+</body>
+</html>
