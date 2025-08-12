@@ -1,14 +1,14 @@
 ﻿import {
   WebGLRenderer, Scene, PerspectiveCamera, AmbientLight, DirectionalLight,
-  Color, IcosahedronGeometry, MeshStandardMaterial, Mesh, Box3, Vector3, MathUtils,
-  TorusGeometry, Box3Helper, GridHelper, AxesHelper, Sphere
+  Color, IcosahedronGeometry, MeshStandardMaterial, MeshBasicMaterial, Mesh,
+  Box3, Vector3, MathUtils, TorusGeometry, Box3Helper, GridHelper, AxesHelper, Sphere
 } from "https://esm.sh/three@0.160.0";
 import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs loaded (material hardening + wireframe toggle)");
+log("🚀 app.mjs loaded (wireframe=W, basic=B)");
 
 const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 
@@ -24,7 +24,8 @@ let modelRoot = null;
 let sceneSphere = null;
 let boxHelper = null;
 
-let wire = false; // wireframe toggle
+let wire = false;    // W toggles
+let basic = true;    // B toggles (start in BASIC so it’s guaranteed visible)
 
 init();
 
@@ -55,7 +56,7 @@ function init(){
   scene.add(new GridHelper(20, 20, 0x335577, 0x223344));
   const axes = new AxesHelper(0.5); axes.position.set(0,1.0,0); scene.add(axes);
 
-  // Fallback “head”
+  // Fallback “head” (always visible)
   fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
   fallback.position.set(-0.6,1.6,0);
   scene.add(fallback);
@@ -63,32 +64,25 @@ function init(){
 
   loadGLB(localGLB);
 
-  // UI
-  const micBtn   = document.getElementById("micBtn");
-  const ttsBtn   = document.getElementById("ttsBtn");
-  const debugBtn = document.getElementById("debugBtn");
-  const testBtn  = document.getElementById("testBtn");
+  // UI buttons if present
+  document.getElementById("micBtn")   ?.addEventListener("click", enableMic);
+  document.getElementById("ttsBtn")   ?.addEventListener("click", ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); });
+  document.getElementById("debugBtn") ?.addEventListener("click", showDebug);
+  document.getElementById("testBtn")  ?.addEventListener("click", ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); });
 
-  if (micBtn)   micBtn.onclick   = enableMic;
-  if (ttsBtn)   ttsBtn.onclick   = ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
-  if (debugBtn) debugBtn.onclick = showDebug;
-  if (testBtn)  testBtn.onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); };
-
-  // Keyboard: W toggles wireframe for ALL model meshes
+  // Keyboard toggles
   addEventListener("keydown", (e)=>{
-    if (e.key.toLowerCase() === "w"){
-      wire = !wire;
-      applyWireframe(wire);
-      log(`Wireframe: ${wire ? "ON" : "OFF"} (press W to toggle)`);
-    }
+    const k = e.key.toLowerCase();
+    if (k === "w"){ wire = !wire; applyWireframe(wire); log(`Wireframe: ${wire?"ON":"OFF"}`); }
+    if (k === "b"){ basic = !basic; applyBasic(basic); log(`Basic material: ${basic?"ON":"OFF"}`); }
   });
 
   requestAnimationFrame(loop);
-  log("✅ render loop running — press W for wireframe");
+  log("✅ render loop running — press W (wireframe) / B (basic)");
 }
 
 function pickOpen(dict){
-  const entries = Object.entries(dict); // [name, index]
+  const entries = Object.entries(dict);
   const prefer = [/^surprised$/i, /jawopen/i, /mouthopen/i, /^open$/i, /viseme_aa/i, /^aa$/i, /open/i, /o$/i];
   let hit = entries.find(([n])=> prefer.some(rx=>rx.test(n)));
   if (!hit && entries.length) hit = entries[0];
@@ -96,24 +90,45 @@ function pickOpen(dict){
   return { name: hit[0], index: hit[1] };
 }
 
-function hardenMaterial(mat){
-  const list = Array.isArray(mat) ? mat : [mat];
-  for (const m of list){
+// store original materials per mesh so we can swap back
+function captureOriginalMaterials(root){
+  root.traverse(o=>{
+    if (o.isMesh){
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      o.userData._origMats = mats.map(m=>m);
+    }
+  });
+}
+
+function applyBasic(on){
+  if (!modelRoot) return;
+  modelRoot.traverse(o=>{
+    if (!o.isMesh) return;
+    if (on){
+      // neon-tinted basic material so it can't be blacked out by lighting
+      const basicMat = new MeshBasicMaterial({ color: 0x8fffd5 });
+      // preserve wireframe state
+      basicMat.wireframe = wire;
+      o.material = basicMat;
+    } else {
+      if (o.userData._origMats){
+        const mats = o.userData._origMats;
+        o.material = (mats.length===1) ? mats[0] : mats;
+      }
+    }
+  });
+}
+
+function hardenPBR(o){
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  for (const m of mats){
     if (!m) continue;
     try{
-      m.transparent = false;
-      m.opacity = 1;
-      m.depthWrite = true;
-      m.depthTest  = true;
+      m.transparent = false; m.opacity = 1;
+      m.depthWrite = true; m.depthTest = true;
       m.side = 2; // DoubleSide
-      if (m.emissive){
-        // leave emissive to mouth driver; ensure sane baseline
-        if (typeof m.emissiveIntensity !== "number") m.emissiveIntensity = 0.0;
-      }
-      if (m.color && m.color.setHex) {
-        // keep albedo if present; do not force white to avoid washing textures
-      }
-      // If the material type doesn’t support emissive, that’s fine.
+      if (typeof m.emissiveIntensity !== "number") m.emissiveIntensity = 0.0;
+      m.wireframe = wire;
     }catch{}
   }
 }
@@ -134,14 +149,13 @@ function loadGLB(url){
     const root = g.scene || (g.scenes && g.scenes[0]);
     if (!root){ log("❌ GLB has no scene"); return; }
 
-    // Reset per-load state
     morphTargets = []; morphNameOpen = null; jaw = null; headBone = null;
 
     root.traverse((o)=>{
       if (o.isMesh){
         o.frustumCulled = false;
         o.castShadow = false; o.receiveShadow = true;
-        hardenMaterial(o.material); // <<< IMPORTANT: make materials safe/visible
+        hardenPBR(o);
       }
       if (o.morphTargetDictionary && o.morphTargetInfluences){
         const pick = pickOpen(o.morphTargetDictionary);
@@ -164,21 +178,23 @@ function loadGLB(url){
     modelRoot = root;
     scene.add(root);
 
-    // Fit camera & helpers from bounding sphere
+    // capture orig materials, then force BASIC ON first so you SEE it
+    captureOriginalMaterials(root);
+    applyBasic(true);
+
+    // Fit camera by bounding sphere
     const box = new Box3().setFromObject(root);
     const center = box.getCenter(new Vector3());
     const sphere = new Sphere(); box.getBoundingSphere(sphere);
     sceneSphere = sphere;
-
     controls.target.copy(center);
     const dist = sphere.radius * 2.2 + 0.5;
     camera.position.set(center.x, center.y + sphere.radius*0.2, center.z + Math.max(dist, 1.2));
 
     if (boxHelper) scene.remove(boxHelper);
-    boxHelper = new Box3Helper(box, 0x33ff88);
-    scene.add(boxHelper);
+    boxHelper = new Box3Helper(box, 0x33ff88); scene.add(boxHelper);
 
-    // Mouth ring near head/jaw
+    // Mouth ring
     if (!mouthMarker){
       mouthMarker = new Mesh(
         new TorusGeometry(0.10, 0.022, 16, 32),
@@ -189,7 +205,7 @@ function loadGLB(url){
     (jaw || headBone || root).add(mouthMarker);
     mouthMarker.position.set(0, -0.10, 0.22);
 
-    // Apply wireframe state if toggled already
+    // respect wireframe toggle on load
     applyWireframe(wire);
 
     log(`✓ Model loaded. Morph picks: ${morphTargets.length}`);
@@ -198,6 +214,7 @@ function loadGLB(url){
       for (const t of morphTargets){ log(`  - ${t.mesh.name} → ${t.name} [${t.index}]`); }
     }
     log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
+    log("Tip: press B to toggle basic/original materials; W for wireframe.");
   }, undefined, (err)=>{
     log("ℹ Failed to load GLB ("+ (err?.message || "network/error") +")");
   });
@@ -252,26 +269,20 @@ function clampCamera(){
   if (!sceneSphere) return;
   const minD = Math.max(0.1, sceneSphere.radius * 0.6);
   const maxD = Math.max(minD+0.1, sceneSphere.radius * 6.0);
-
   const dir = new Vector3().subVectors(camera.position, controls.target);
-  let d = dir.length();
-  if (d === 0){ dir.set(0,0,1); d = 1; }
-
+  let d = dir.length(); if (d === 0){ dir.set(0,0,1); d = 1; }
   if (d < minD){ dir.setLength(minD); camera.position.copy(controls.target).add(dir); }
   if (d > maxD){ dir.setLength(maxD); camera.position.copy(controls.target).add(dir); }
 }
 
-function keepModelVisible(){
-  if (modelRoot) modelRoot.visible = true;
-}
+function keepModelVisible(){ if (modelRoot) modelRoot.visible = true; }
 
 function showDebug(){
   let out = "Debug\n=====\n";
   let foundMorph = 0;
   scene.traverse((o)=>{
     if (o.morphTargetDictionary){
-      foundMorph++;
-      out += `Mesh: ${o.name}\n`;
+      foundMorph++; out += `Mesh: ${o.name}\n`;
       const dict=o.morphTargetDictionary;
       const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
       for (const k of keys){
@@ -289,17 +300,13 @@ function showDebug(){
     }
   });
   out += `\nSphere r: ${sceneSphere?sceneSphere.radius.toFixed(3):"n/a"}\nCamera: ${camera.position.toArray().map(v=>v.toFixed(3)).join(", ")}\nTarget: ${controls.target.toArray().map(v=>v.toFixed(3)).join(", ")}\n`;
-  log(out);
-  try{ console.clear(); console.log(out); }catch(e){}
+  log(out); try{ console.clear(); console.log(out); }catch(e){}
 }
 
 let prev=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dt = (now-(prev||now))/1000; prev = now;
-  clampCamera();
-  keepModelVisible();
-  controls.update();
-  driveMouth();
+  clampCamera(); keepModelVisible(); controls.update(); driveMouth();
   renderer.render(scene,camera);
 }
