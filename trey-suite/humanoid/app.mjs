@@ -10,7 +10,7 @@ const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
 log("🚀 app.mjs start (morphs on any Mesh)");
 
-const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href;
+const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
