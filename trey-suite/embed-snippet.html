@@ -54,3 +54,156 @@
   </script>
 </body>
 </html>
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trey Vault</title>
+  <style>
+    html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui}
+    .wrap{display:flex;flex-direction:column;height:70vh;background:#fff}
+    header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #eee;gap:8px}
+    header h2{margin:0;font-size:16px}
+    header .row{display:flex;gap:8px;flex-wrap:wrap}
+    header button{border:0;background:#111;color:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
+    main{flex:1;overflow:auto;padding:12px 14px}
+    label{font-size:13px;color:#444}
+    input[type="text"], textarea{width:100%;border:1px solid #ddd;border-radius:10px;padding:10px;font:inherit}
+    textarea{min-height:100px}
+    .muted{color:#666;font-size:12px;margin-top:6px}
+    .row{display:flex;gap:8px;margin-top:10px;align-items:center}
+    .row button{border:0;background:#111;color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h2 id="hdr">Trey Vault</h2>
+      <div class="row">
+        <button id="btnImport">Import Profile</button>
+        <button id="btnLoadTJF">Load TJF</button>
+        <button id="btnProfile">Profile Card</button>
+        <button id="btnToken" title="Set Owner Token">Set Token</button>
+        <button onclick="parent.document.getElementById('bffPanel').style.display='none'">Close</button>
+      </div>
+    </header>
+    <main>
+      <div class="muted" id="status">Ready.</div>
+
+      <div class="row">
+        <label style="width:100%">Title
+          <input id="title" type="text" placeholder="Session title…" />
+        </label>
+      </div>
+
+      <div class="row" style="align-items:flex-start">
+        <label style="width:100%">Notes
+          <textarea id="body" placeholder="Paste session summary, thoughts, todos…"></textarea>
+        </label>
+      </div>
+
+      <div class="row">
+        <label>File
+          <input id="file" type="file" />
+        </label>
+        <button id="save">Save to Vault</button>
+      </div>
+
+      <div class="muted">Files & notes save to your private bucket and vault_items table.</div>
+    </main>
+  </div>
+
+  <script>
+    // Supabase function endpoint from parent config
+    const cfg = (parent && parent.BFF_SUPABASE) ? parent.BFF_SUPABASE : {};
+    const anon = cfg.anon || "";
+    const base = (cfg.url || "").replace(".supabase.co", ".functions.supabase.co");
+    const endpoint = base ? `${base}/vault_save` : "";
+
+    const $ = (id) => document.getElementById(id);
+    const status = (m) => { $("status").textContent = m; };
+
+    // Owner token (local to your browser)
+    function getToken(){ return localStorage.getItem("bff_owner_token") || ""; }
+    function setToken(){
+      const v = prompt("Paste your OWNER_TOKEN (kept locally on this device):", getToken());
+      if (v) { localStorage.setItem("bff_owner_token", v.trim()); alert("Saved."); }
+    }
+    $("btnToken").onclick = setToken;
+
+    // Profile helpers (stored locally)
+    function setProfileText(text){
+      localStorage.setItem("bff_profile_json", text);
+      try {
+        const j = JSON.parse(text);
+        const name = j?.personas?.[0]?.name || "Profile";
+        $("hdr").textContent = `Trey Vault — ${name}`;
+        status("Profile loaded ✅");
+      } catch { status("Profile stored (raw JSON)."); }
+    }
+
+    async function importProfileFromFile(){
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = "application/json";
+      inp.onchange = async () => {
+        const f = inp.files?.[0]; if (!f) return;
+        const text = await f.text();
+        setProfileText(text);
+      };
+      inp.click();
+    }
+
+    async function importProfileFromAssets(){
+      try{
+        const r = await fetch("assets/TJF_BFF_Profile.json");
+        if(!r.ok) throw new Error(r.statusText);
+        const text = await r.text();
+        setProfileText(text);
+      } catch(e){
+        status("Could not load assets/TJF_BFF_Profile.json");
+        alert("Make sure TJF_BFF_Profile.json exists under trey-suite/assets/");
+      }
+    }
+
+    $("btnImport").onclick = importProfileFromFile;
+    $("btnLoadTJF").onclick = importProfileFromAssets;
+    $("btnProfile").onclick = () => window.open("TJF_Avatar_Profile_Card.html","_blank");
+
+    // Save to vault (Edge Function)
+    async function save(){
+      if (!endpoint || !anon) { alert("Supabase config missing."); return; }
+      const token = getToken();
+      if (!token) { setToken(); return; }
+
+      const fd = new FormData();
+      fd.append("title", $("title").value.trim());
+      fd.append("body",  $("body").value.trim());
+      const profileJson = localStorage.getItem("bff_profile_json");
+      if (profileJson) fd.append("tags", profileJson); // store alongside entry
+      const f = $("file").files[0]; if (f) fd.append("file", f);
+
+      status("Saving...");
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${anon}`, "apikey": anon, "x-bff-owner": token },
+        body: fd
+      }).then(r => r.json()).catch(e => ({ ok:false, error:String(e) }));
+
+      if (r.ok) { status("Saved ✅"); $("title").value=""; $("body").value=""; $("file").value=""; }
+      else { status("Error: " + (r.error || "unknown")); }
+    }
+    $("save").onclick = save;
+
+    // Show current profile name if present
+    (function boot(){
+      const text = localStorage.getItem("bff_profile_json");
+      if (text) {
+        try { const j = JSON.parse(text); $("hdr").textContent = `Trey Vault — ${j?.personas?.[0]?.name || "Profile"}`; }
+        catch {}
+      }
+    })();
+  </script>
+</body>
+</html>
