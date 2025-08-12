@@ -10,7 +10,7 @@
     header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #eee;gap:10px}
     .id{display:flex;align-items:center;gap:10px;min-width:0}
     .id img{width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid #e5e5e5;flex:0 0 auto}
-    .id h2{margin:0;font-size:16px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+    .id h2{margin:0;font-size:16px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:52vw}
     .row{display:flex;gap:8px;flex-wrap:wrap}
     header button{border:0;background:#111;color:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
     main{flex:1;overflow:auto;padding:12px 14px}
@@ -46,26 +46,44 @@
   </div>
 
   <script>
-    // --- Profile helpers (stored locally) ---
+    // ---------- Status helper ----------
+    const status = (m) => { const el = document.getElementById("status"); if (el) el.textContent = m; };
+
+    // ---------- Safe JSON parser (strips BOM, comments, trailing commas) ----------
+    function safeParseProfile(text){
+      try {
+        let s = (text || "").replace(/^\uFEFF/, "");     // strip BOM
+        // strip /* */ and // comments
+        s = s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
+        // remove trailing commas before ] or }
+        s = s.replace(/,\s*([}\]])/g, "$1");
+        return JSON.parse(s);
+      } catch (e) {
+        console.warn("Profile JSON parse error:", e);
+        return null;
+      }
+    }
+
+    // ---------- Apply profile to UI ----------
     function applyProfile(obj){
-      try{
-        const p = obj?.personas?.[0] || {};
-        const name = p.name || "Profile";
-        const hdr = document.getElementById("hdr");
-        const av  = document.getElementById("avatar");
-        if (hdr) hdr.textContent = `Trey Assistant — ${name}`;
-        if (av && p.avatar) av.src = p.avatar;
-        status("Profile loaded ✅");
-      }catch{ status("Profile stored."); }
+      const p = (obj && obj.personas && obj.personas[0]) ? obj.personas[0] : {};
+      const name = p.name || "Profile";
+      const hdr  = document.getElementById("hdr");
+      const av   = document.getElementById("avatar");
+      if (hdr) hdr.textContent = `Trey Assistant — ${name}`;
+      if (av && p.avatar) av.src = p.avatar;
+      status("Profile loaded ✅");
     }
 
+    // ---------- Store + apply profile text ----------
     function setProfileText(text){
-      localStorage.setItem("bff_profile_json", text);
-      try { applyProfile(JSON.parse(text)); } catch { status("Profile stored (raw JSON)."); }
+      localStorage.setItem("bff_profile_json", text || "");
+      const j = safeParseProfile(text);
+      if (j) applyProfile(j);
+      else   status("Profile stored (raw JSON).");
     }
 
-    function status(msg){ document.getElementById("status").textContent = msg; }
-
+    // ---------- Import via file picker ----------
     async function importProfileFromFile(){
       const inp = document.createElement("input");
       inp.type = "file"; inp.accept = "application/json";
@@ -77,27 +95,23 @@
       inp.click();
     }
 
-    // Robust loader: tries the two correct paths for your Pages setup
+    // ---------- Load bundled JSON (tries both valid paths) ----------
     async function importProfileFromAssets(){
       const candidates = [
-        "/bff-suite/assets/TJF_BFF_Profile.json", // absolute (site root)
-        "assets/TJF_BFF_Profile.json"             // relative to this page
+        "/bff-suite/assets/TJF_BFF_Profile.json", // absolute for GitHub Pages repo path
+        "assets/TJF_BFF_Profile.json"             // relative from current page
       ];
       for (const url of candidates) {
         try {
           const r = await fetch(url, { cache: "no-store" });
-          if (r.ok) {
-            const text = await r.text();
-            setProfileText(text);
-            return;
-          }
+          if (r.ok) { const text = await r.text(); setProfileText(text); return; }
         } catch {}
       }
       status("Could not load assets/TJF_BFF_Profile.json");
       alert("Make sure TJF_BFF_Profile.json is in trey-suite/assets/ and deployed.");
     }
 
-    // Simple demo save (local only, same as before)
+    // ---------- Demo local 'Save' (unchanged) ----------
     function save(){
       const txt = document.getElementById('note').value.trim();
       if(!txt){ alert('Type a note first.'); return; }
@@ -109,14 +123,17 @@
       alert('Saved locally ✅');
     }
 
-    // Wire buttons + boot with any existing profile
-    document.getElementById('btnImport').onclick   = importProfileFromFile;
-    document.getElementById('btnLoadTJF').onclick  = importProfileFromAssets;
-    document.getElementById('btnProfile').onclick  = () => window.open('TJF_Avatar_Profile_Card.html','_blank');
+    // ---------- Wire buttons + boot ----------
+    document.getElementById('btnImport').onclick  = importProfileFromFile;
+    document.getElementById('btnLoadTJF').onclick = importProfileFromAssets;
+    document.getElementById('btnProfile').onclick = () => window.open('TJF_Avatar_Profile_Card.html','_blank');
 
     (function boot(){
       const text = localStorage.getItem("bff_profile_json");
-      if (text) { try { applyProfile(JSON.parse(text)); } catch {} }
+      if (text) {
+        const j = safeParseProfile(text);
+        if (j) applyProfile(j); else status("Profile stored (raw JSON).");
+      }
     })();
   </script>
 </body>
