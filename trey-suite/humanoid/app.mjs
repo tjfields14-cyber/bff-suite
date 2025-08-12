@@ -1,13 +1,13 @@
 ﻿import {
   WebGLRenderer, Scene, PerspectiveCamera, AmbientLight, DirectionalLight,
   Color, IcosahedronGeometry, MeshStandardMaterial, Mesh, Box3, Vector3, MathUtils
-} from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { GLTFLoader }   from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-import { OrbitControls }from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+} from "https://esm.sh/three@0.160.0";
+import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs start");
+log("🚀 app.mjs start (esm.sh)");
 
 const urlGLB = new URL("../assets/humanoid.glb", import.meta.url).href;
 
@@ -24,12 +24,7 @@ function init(){
   camera.position.set(0, 1.2, 2.1);
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.setSize(innerWidth, innerHeight);
-
-  window.addEventListener("resize", ()=>{
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
+  addEventListener("resize", ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0,1.2,0);
@@ -39,7 +34,7 @@ function init(){
   const key = new DirectionalLight(0xffffff,1.1); key.position.set(1.5,2.8,1.6); scene.add(key);
   const rim = new DirectionalLight(0x88bbff,0.6); rim.position.set(-2.0,1.8,-1.5); scene.add(rim);
 
-  // Always show fallback first
+  // Fallback head (always visible first)
   fallback = new Mesh(
     new IcosahedronGeometry(0.25,3),
     new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05})
@@ -48,70 +43,58 @@ function init(){
   scene.add(fallback);
   log("✓ Fallback visible");
 
-  // Load GLB (if present)
   tryLoadGLB();
 
-  // Wire buttons
-  const micBtn   = document.getElementById("micBtn");
-  const ttsBtn   = document.getElementById("ttsBtn");
-  const debugBtn = document.getElementById("debugBtn");
-  const testBtn  = document.getElementById("testBtn");
-  micBtn.onclick   = enableMic;
-  ttsBtn.onclick   = function(){ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
-  debugBtn.onclick = showMorphDebug;
-  testBtn.onclick  = function(){ testOpen=1; setTimeout(function(){ testOpen=0; }, 800); };
+  // Buttons
+  document.getElementById("micBtn").onclick   = enableMic;
+  document.getElementById("ttsBtn").onclick   = ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
+  document.getElementById("debugBtn").onclick = showMorphDebug;
+  document.getElementById("testBtn").onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 800); };
 
-  // Start loop
   requestAnimationFrame(loop);
   log("✅ render loop running");
 }
 
 function tryLoadGLB(){
   log("… loading GLB: "+urlGLB);
-  const loader = new GLTFLoader();
-  loader.load(urlGLB, function(g){
+  new GLTFLoader().load(urlGLB,(g)=>{
     const root = g.scene || (g.scenes && g.scenes[0]);
     if (!root){ log("❌ GLB has no scene"); return; }
 
-    // Inspect model
-    root.traverse(function(o){
+    root.traverse((o)=>{
       if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
       if (o.isSkinnedMesh){
         skinned = o;
         const dict = o.morphTargetDictionary || {};
         const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen"];
-        for (var i=0; i<preferred.length; i++){
-          var n = preferred[i]; if (dict.hasOwnProperty(n)){ morphMap.open = dict[n]; break; }
-        }
-        if (morphMap.open === undefined){
-          var keys = Object.keys(dict);
-          for (var k=0; k<keys.length; k++){ if (/jaw|open|aa|mouth/i.test(keys[k])){ morphMap.open = dict[keys[k]]; break; } }
+        for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
+        if (morphMap.open===undefined){
+          const keys = Object.keys(dict);
+          const cand = keys.find(k=>/jaw|open|aa|mouth/i.test(k));
+          if (cand) morphMap.open = dict[cand];
         }
       }
-      if (!jaw && /jaw/i.test(o.name)) jaw = o; // pick a jaw bone if there is one
+      if (!jaw && /jaw/i.test(o.name)) jaw = o;
     });
 
-    // Frame model nicely
+    // Frame model
     const box = new Box3().setFromObject(root);
     const size = box.getSize(new Vector3()).length();
     const center = box.getCenter(new Vector3());
     controls.target.copy(center);
-    const dist = size*0.9;
-    camera.position.set(center.x, center.y + size*0.2, center.z + dist);
+    camera.position.set(center.x, center.y + size*0.2, center.z + size*0.9);
 
-    // Swap fallback → model
     scene.add(root);
     if (fallback){ scene.remove(fallback); fallback=null; }
     log("✓ Model loaded. Chosen open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
-  }, undefined, function(err){
+  }, undefined, ()=>{
     log("ℹ GLB missing or failed to load; staying on fallback.");
-    // keep fallback
   });
 }
 
 function enableMic(){
   log("… requesting mic");
-  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+  navigator.mediaDevices.getUserMedia({audio:true}).then((stream)=>{
     const ac = new (window.AudioContext||window.webkitAudioContext)();
     const src = ac.createMediaStreamSource(stream);
     analyser = ac.createAnalyser();
@@ -119,27 +102,23 @@ function enableMic(){
     dataArray = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
     log("✓ Mic on. Speak (or press 🧪).");
-  }).catch(function(){
-    log("❌ Mic permission denied.");
-  });
+  }).catch(()=> log("❌ Mic permission denied."));
 }
 
 function amplitude(){
   if(!analyser||!dataArray) return 0;
   analyser.getByteTimeDomainData(dataArray);
-  var sum=0; for(var i=0;i<dataArray.length;i++){ var v=(dataArray[i]-128)/128; sum+=v*v; }
-  return Math.sqrt(sum/dataArray.length); // 0..~0.5
+  let sum=0; for(let i=0;i<dataArray.length;i++){ const v=(dataArray[i]-128)/128; sum+=v*v; }
+  return Math.sqrt(sum/dataArray.length);
 }
 
 function driveMouth(){
-  var micOpen = Math.min(1, amplitude()*6);
-  var open = Math.max(testOpen, micOpen);
+  const micOpen = Math.min(1, amplitude()*6);
+  const open = Math.max(testOpen, micOpen);
   if (skinned && morphMap.open !== undefined && skinned.morphTargetInfluences){
     skinned.morphTargetInfluences[morphMap.open] = open;
   }
-  if (jaw){
-    jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35);
-  }
+  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
   if (fallback){
     fallback.rotation.y += 0.01;
     fallback.scale.setScalar(1 + open*0.2);
@@ -147,17 +126,16 @@ function driveMouth(){
 }
 
 function showMorphDebug(){
-  var out = "Morph Debug\\n===========\\n";
-  var found = 0;
-  scene.traverse(function(o){
+  let out = "Morph Debug\\n===========\\n";
+  let found = 0;
+  scene.traverse((o)=>{
     if (o.isSkinnedMesh && o.morphTargetDictionary){
       found++;
       out += "Mesh: "+o.name+"\\n";
-      var dict=o.morphTargetDictionary;
-      var keys = Object.keys(dict).sort(function(a,b){ return a.localeCompare(b); });
-      for (var i=0;i<keys.length;i++){
-        var k = keys[i];
-        var mark = (morphMap.open!==undefined && dict[k]===morphMap.open) ? "  (chosen: open)" : "";
+      const dict=o.morphTargetDictionary;
+      const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
+      for (const k of keys){
+        const mark = (morphMap.open!==undefined && dict[k]===morphMap.open) ? "  (chosen: open)" : "";
         out += "  - "+k+mark+"\\n";
       }
     }
