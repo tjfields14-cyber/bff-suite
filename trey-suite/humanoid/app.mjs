@@ -101,7 +101,7 @@ function tryLoadGLB(url, isSample=false){
       // Create mouth marker (small ring) and attach near head if no real jaw or morphs
       if (!mouthMarker){
         mouthMarker = new Mesh(
-          new TorusGeometry(0.05, 0.012, 12, 24),
+          new TorusGeometry(0.10, 0.022, 16, 32),
           new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35})
         );
         mouthMarker.visible = true;
@@ -111,12 +111,12 @@ function tryLoadGLB(url, isSample=false){
         // Real drive path exists — still show marker but anchor to jaw/head for visibility
         mouthParent = jaw || headBone || root;
         mouthParent.add(mouthMarker);
-        mouthMarker.position.set(0, -0.08, 0.12);
+        mouthMarker.position.set(0, -0.10, 0.22);
         log("• Mouth marker attached to: " + (jaw ? ("jaw bone '"+jaw.name+"'") : (headBone ? ("head/neck bone '"+headBone.name+"'") : "root")));
       } else {
         // No morphs, no jaw — position marker at face-height relative to model center
         root.add(mouthMarker);
-        mouthMarker.position.copy(center.clone().add(new Vector3(0, size*0.38, size*0.06)));
+        mouthMarker.position.copy(center.clone().add(new Vector3(0, size*0.40, size*0.14)));
         log("• No morphs/jaw — using mouth marker near face center");
       }
 
@@ -150,7 +150,7 @@ function amplitude(){
 }
 
 function driveMouth(){
-  const micOpen = Math.min(1, amplitude()*6);
+  const micOpen = Math.min(1, amplitude()*12);
   const open = Math.max(testOpen, micOpen);
 
   // Real morph
@@ -165,7 +165,7 @@ function driveMouth(){
   if (mouthMarker){
     const s = 1 + open*0.9;
     mouthMarker.scale.set(s, s*1.2, s);
-    mouthMarker.material.emissiveIntensity = 0.2 + open*0.8;
+    mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
   }
 
   // Fallback visual
