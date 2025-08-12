@@ -8,7 +8,7 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs loaded");
+log("🚀 app.mjs loaded (material hardening + wireframe toggle)");
 
 const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 
@@ -17,14 +17,14 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
-// Drive morphs across any meshes that expose an open-like target
 let morphTargets = []; // [{ mesh, index, name, origEmissive?:number, origIntensity?:number }]
 let morphNameOpen = null;
 
-// Keep references to the model and bounds
 let modelRoot = null;
 let sceneSphere = null;
 let boxHelper = null;
+
+let wire = false; // wireframe toggle
 
 init();
 
@@ -74,8 +74,17 @@ function init(){
   if (debugBtn) debugBtn.onclick = showDebug;
   if (testBtn)  testBtn.onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); };
 
+  // Keyboard: W toggles wireframe for ALL model meshes
+  addEventListener("keydown", (e)=>{
+    if (e.key.toLowerCase() === "w"){
+      wire = !wire;
+      applyWireframe(wire);
+      log(`Wireframe: ${wire ? "ON" : "OFF"} (press W to toggle)`);
+    }
+  });
+
   requestAnimationFrame(loop);
-  log("✅ render loop running");
+  log("✅ render loop running — press W for wireframe");
 }
 
 function pickOpen(dict){
@@ -87,6 +96,38 @@ function pickOpen(dict){
   return { name: hit[0], index: hit[1] };
 }
 
+function hardenMaterial(mat){
+  const list = Array.isArray(mat) ? mat : [mat];
+  for (const m of list){
+    if (!m) continue;
+    try{
+      m.transparent = false;
+      m.opacity = 1;
+      m.depthWrite = true;
+      m.depthTest  = true;
+      m.side = 2; // DoubleSide
+      if (m.emissive){
+        // leave emissive to mouth driver; ensure sane baseline
+        if (typeof m.emissiveIntensity !== "number") m.emissiveIntensity = 0.0;
+      }
+      if (m.color && m.color.setHex) {
+        // keep albedo if present; do not force white to avoid washing textures
+      }
+      // If the material type doesn’t support emissive, that’s fine.
+    }catch{}
+  }
+}
+
+function applyWireframe(w){
+  if (!modelRoot) return;
+  modelRoot.traverse(o=>{
+    if (o.isMesh){
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats){ if (m) try{ m.wireframe = w; }catch{} }
+    }
+  });
+}
+
 function loadGLB(url){
   log("… loading GLB: " + url);
   new GLTFLoader().load(url,(g)=>{
@@ -94,14 +135,13 @@ function loadGLB(url){
     if (!root){ log("❌ GLB has no scene"); return; }
 
     // Reset per-load state
-    morphTargets = [];
-    morphNameOpen = null;
-    jaw = null; headBone = null;
+    morphTargets = []; morphNameOpen = null; jaw = null; headBone = null;
 
     root.traverse((o)=>{
       if (o.isMesh){
         o.frustumCulled = false;
         o.castShadow = false; o.receiveShadow = true;
+        hardenMaterial(o.material); // <<< IMPORTANT: make materials safe/visible
       }
       if (o.morphTargetDictionary && o.morphTargetInfluences){
         const pick = pickOpen(o.morphTargetDictionary);
@@ -149,6 +189,9 @@ function loadGLB(url){
     (jaw || headBone || root).add(mouthMarker);
     mouthMarker.position.set(0, -0.10, 0.22);
 
+    // Apply wireframe state if toggled already
+    applyWireframe(wire);
+
     log(`✓ Model loaded. Morph picks: ${morphTargets.length}`);
     if (morphTargets.length){
       log(`• Chosen morph name: '${morphNameOpen}' on ${morphTargets.length} mesh(es)`);
@@ -183,7 +226,6 @@ function driveMouth(){
   const micOpen = Math.min(1, amplitude()*12);
   const open = Math.max(testOpen, micOpen);
 
-  // Drive ALL picked morphs + tint emissive
   for (const t of morphTargets){
     if (t.mesh.morphTargetInfluences){
       t.mesh.morphTargetInfluences[t.index] = open;
@@ -225,7 +267,6 @@ function keepModelVisible(){
 
 function showDebug(){
   let out = "Debug\n=====\n";
-  // Morphs
   let foundMorph = 0;
   scene.traverse((o)=>{
     if (o.morphTargetDictionary){
@@ -241,7 +282,6 @@ function showDebug(){
     }
   });
   if (!foundMorph) out += "- No morph targets found.\n";
-  // Bones
   scene.traverse((o)=>{
     if (o.isBone){
       const mark = (jaw && o===jaw) ? "  (chosen: jaw)" : (headBone && o===headBone ? "  (anchor)" : "");
