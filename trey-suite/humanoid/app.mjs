@@ -8,7 +8,7 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🔧 app.mjs start (camera clamp + always-visible)");
+log("🚀 app.mjs loaded");
 
 const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 
@@ -17,23 +17,22 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
-// Drive morphs across meshes that expose an open-like target
+// Drive morphs across any meshes that expose an open-like target
 let morphTargets = []; // [{ mesh, index, name, origEmissive?:number, origIntensity?:number }]
 let morphNameOpen = null;
 
-// NEW: keep references to the model and its bounding sphere
+// Keep references to the model and bounds
 let modelRoot = null;
 let sceneSphere = null;
 let boxHelper = null;
 
 init();
+
 function init(){
   const canvas = document.getElementById("c");
   renderer = new WebGLRenderer({canvas, antialias:true});
   scene    = new Scene(); scene.background = new Color("#0b0b0c");
-  camera   = new PerspectiveCamera(35, innerWidth/innerHeight, 0.001, 1000); // wider near/far
-
-  // Stable initial camera
+  camera   = new PerspectiveCamera(35, innerWidth/innerHeight, 0.001, 1000);
   camera.position.set(0.0, 1.5, 3.2);
 
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -56,7 +55,7 @@ function init(){
   scene.add(new GridHelper(20, 20, 0x335577, 0x223344));
   const axes = new AxesHelper(0.5); axes.position.set(0,1.0,0); scene.add(axes);
 
-  // Fallback head (kept visible)
+  // Fallback “head”
   fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
   fallback.position.set(-0.6,1.6,0);
   scene.add(fallback);
@@ -65,10 +64,15 @@ function init(){
   loadGLB(localGLB);
 
   // UI
-  document.getElementById("micBtn").onclick   = enableMic;
-  document.getElementById("ttsBtn").onclick   = ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
-  document.getElementById("debugBtn").onclick = showDebug;
-  document.getElementById("testBtn").onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); };
+  const micBtn   = document.getElementById("micBtn");
+  const ttsBtn   = document.getElementById("ttsBtn");
+  const debugBtn = document.getElementById("debugBtn");
+  const testBtn  = document.getElementById("testBtn");
+
+  if (micBtn)   micBtn.onclick   = enableMic;
+  if (ttsBtn)   ttsBtn.onclick   = ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
+  if (debugBtn) debugBtn.onclick = showDebug;
+  if (testBtn)  testBtn.onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); };
 
   requestAnimationFrame(loop);
   log("✅ render loop running");
@@ -89,18 +93,16 @@ function loadGLB(url){
     const root = g.scene || (g.scenes && g.scenes[0]);
     if (!root){ log("❌ GLB has no scene"); return; }
 
-    // Ensure nothing is culled unexpectedly
+    // Reset per-load state
+    morphTargets = [];
+    morphNameOpen = null;
+    jaw = null; headBone = null;
+
     root.traverse((o)=>{
       if (o.isMesh){
         o.frustumCulled = false;
         o.castShadow = false; o.receiveShadow = true;
       }
-    });
-
-    // Collect morph targets across ALL meshes
-    morphTargets = [];
-    morphNameOpen = null;
-    root.traverse((o)=>{
       if (o.morphTargetDictionary && o.morphTargetInfluences){
         const pick = pickOpen(o.morphTargetDictionary);
         if (pick){
@@ -112,32 +114,31 @@ function loadGLB(url){
           if (!morphNameOpen) morphNameOpen = pick.name;
         }
       }
+      if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o;
+      if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o;
     });
+    if (!headBone){
+      root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; });
+    }
 
-    // Bones to anchor ring
-    root.traverse((o)=>{ if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o; });
-    root.traverse((o)=>{ if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o; });
-    if (!headBone){ root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; }); }
-
-    // Add model
     modelRoot = root;
     scene.add(root);
 
-    // Fit camera + helpers from bounding sphere (more stable than Box3 length)
+    // Fit camera & helpers from bounding sphere
     const box = new Box3().setFromObject(root);
     const center = box.getCenter(new Vector3());
     const sphere = new Sphere(); box.getBoundingSphere(sphere);
     sceneSphere = sphere;
 
     controls.target.copy(center);
-    const dist = sphere.radius * 2.2;
-    camera.position.set(center.x, center.y + sphere.radius*0.2, center.z + dist);
+    const dist = sphere.radius * 2.2 + 0.5;
+    camera.position.set(center.x, center.y + sphere.radius*0.2, center.z + Math.max(dist, 1.2));
 
     if (boxHelper) scene.remove(boxHelper);
     boxHelper = new Box3Helper(box, 0x33ff88);
     scene.add(boxHelper);
 
-    // Mouth ring near head
+    // Mouth ring near head/jaw
     if (!mouthMarker){
       mouthMarker = new Mesh(
         new TorusGeometry(0.10, 0.022, 16, 32),
@@ -182,7 +183,7 @@ function driveMouth(){
   const micOpen = Math.min(1, amplitude()*12);
   const open = Math.max(testOpen, micOpen);
 
-  // Drive ALL picked morphs + tint emit
+  // Drive ALL picked morphs + tint emissive
   for (const t of morphTargets){
     if (t.mesh.morphTargetInfluences){
       t.mesh.morphTargetInfluences[t.index] = open;
@@ -193,17 +194,12 @@ function driveMouth(){
     }
   }
 
-  // Optional bone jaw
   if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
-
-  // Ring
   if (mouthMarker){
     const s = 1 + open*0.9;
     mouthMarker.scale.set(s, s*1.2, s);
     mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
   }
-
-  // Fallback head keeps spinning
   if (fallback){
     fallback.rotation.y += 0.01;
     fallback.scale.setScalar(1 + open*0.2);
@@ -224,8 +220,7 @@ function clampCamera(){
 }
 
 function keepModelVisible(){
-  if (!modelRoot) return;
-  modelRoot.visible = true; // never hidden
+  if (modelRoot) modelRoot.visible = true;
 }
 
 function showDebug(){
@@ -262,9 +257,8 @@ let prev=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dt = (now-(prev||now))/1000; prev = now;
-
-  clampCamera();       // keep distance sane
-  keepModelVisible();  // never let it hide
+  clampCamera();
+  keepModelVisible();
   controls.update();
   driveMouth();
   renderer.render(scene,camera);
