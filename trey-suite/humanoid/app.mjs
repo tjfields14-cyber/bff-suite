@@ -8,9 +8,9 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs start (morphs on any Mesh)");
+log("🚀 app.mjs start (choose 'Surprised' or open-like morph)");
 
-const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
+const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
@@ -18,9 +18,10 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null, mouthParent=null;
 
-// NEW: keep reference to the specific mesh that has morphs
+// Morph driving state
 let morphMesh=null;
-let morphMap = {}; // { open: index }
+let morphMap = {};      // { open: index }
+let morphNameOpen=null; // pretty name for logs
 
 init();
 function init(){
@@ -41,7 +42,7 @@ function init(){
   const key = new DirectionalLight(0xffffff,1.1); key.position.set(1.5,2.8,1.6); scene.add(key);
   const rim = new DirectionalLight(0x88bbff,0.6); rim.position.set(-2.0,1.8,-1.5); scene.add(rim);
 
-  // Fallback head first
+  // Fallback head
   fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
   fallback.position.set(0,1.6,0);
   scene.add(fallback);
@@ -66,31 +67,39 @@ function tryLoadGLB(url, isSample=false){
       const root = g.scene || (g.scenes && g.scenes[0]);
       if (!root){ log("❌ GLB has no scene"); return reject(new Error("no scene")); }
 
-      // Find morphs on ANY Mesh (Skinned or not)
+      // Find morphs on ANY mesh and pick a best "open-like" target
+      let chosen = false;
+      const namePref = [/surprised/i, /jawopen/i, /mouthopen/i, /^open$/i, /viseme_aa/i, /^aa$/i, /open/i, /o$/i];
       root.traverse((o)=>{
         if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
-        if (o.morphTargetDictionary && !morphMesh){
-          morphMesh = o; // first mesh with morphs
+        if (o.morphTargetDictionary && !chosen){
           const dict = o.morphTargetDictionary;
-          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen","open","O","o"];
-          for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
-          if (morphMap.open===undefined){
-            const cand = Object.keys(dict).find(k=>/jaw|open|aa|mouth|viseme/i.test(k));
-            if (cand) morphMap.open = dict[cand];
+          const entries = Object.entries(dict); // [name, index]
+          // try preferred names in order
+          for (const rx of namePref){
+            const hit = entries.find(([n])=> rx.test(n));
+            if (hit){
+              morphMesh = o;
+              morphNameOpen = hit[0];
+              morphMap.open = hit[1];
+              chosen = true;
+              break;
+            }
+          }
+          // fallback: first key
+          if (!chosen && entries.length){
+            morphMesh = o;
+            morphNameOpen = entries[0][0];
+            morphMap.open = entries[0][1];
+            chosen = true;
           }
         }
       });
 
-      // Find jaw/head/neck bones to anchor a mouth marker if needed
-      root.traverse((o)=>{
-        if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o;
-      });
-      root.traverse((o)=>{
-        if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o;
-      });
-      if (!headBone){
-        root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; });
-      }
+      // Find bones to anchor a helper ring
+      root.traverse((o)=>{ if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o; });
+      root.traverse((o)=>{ if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o; });
+      if (!headBone){ root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; }); }
 
       // Frame model
       const box = new Box3().setFromObject(root);
@@ -102,7 +111,7 @@ function tryLoadGLB(url, isSample=false){
       scene.add(root);
       if (fallback){ scene.remove(fallback); fallback=null; }
 
-      // Create mouth marker (ring) and attach/display for visibility/show
+      // Helper ring
       if (!mouthMarker){
         mouthMarker = new Mesh(
           new TorusGeometry(0.10, 0.022, 16, 32),
@@ -110,11 +119,11 @@ function tryLoadGLB(url, isSample=false){
         );
         mouthMarker.visible = true;
       }
-      const parent = jaw || headBone || root;
-      parent.add(mouthMarker);
+      (jaw || headBone || root).add(mouthMarker);
       mouthMarker.position.set(0, -0.10, 0.22);
 
-      log((isSample?"✓ SAMPLE ":"✓ ") + "Model loaded. Open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
+      log((isSample?"✓ SAMPLE ":"✓ ") + `Model loaded. Open morph index: ${morphMap.open===undefined ? "none" : morphMap.open}`);
+      if (morphMesh) log(`• Chosen morph '${morphNameOpen}' on mesh '${morphMesh.name}'`);
       log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
       resolve();
     }, undefined, (err)=>{
@@ -147,7 +156,7 @@ function driveMouth(){
   const micOpen = Math.min(1, amplitude()*12);
   const open = Math.max(testOpen, micOpen);
 
-  // Drive morphs if present (on ANY mesh)
+  // Drive chosen morph (on ANY mesh)
   if (morphMesh && morphMap.open !== undefined && morphMesh.morphTargetInfluences){
     morphMesh.morphTargetInfluences[morphMap.open] = open;
   }
@@ -179,7 +188,8 @@ function showMorphAndBoneDebug(){
       const dict=o.morphTargetDictionary;
       const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
       for (const k of keys){
-        const mark = (morphMap.open!==undefined && dict[k]===morphMap.open && o===morphMesh) ? "  (chosen: open)" : "";
+        const chosen = (morphMesh===o && morphMap.open!==undefined && dict[k]===morphMap.open);
+        const mark = chosen ? "  (chosen: open)" : "";
         out += `  - ${k}${mark}\n`;
       }
     }
