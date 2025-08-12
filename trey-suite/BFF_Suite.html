@@ -1,0 +1,421 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BFF Suite Hub</title>
+<style>
+  :root{ --accent:#4f46e5 }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui;-webkit-font-smoothing:antialiased;background:#fafafa;color:#111}
+  header{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:10}
+  header .id{display:flex;align-items:center;gap:10px}
+  header .id img{width:36px;height:36px;border-radius:50%;border:1px solid #e5e5e5;object-fit:cover}
+  header h1{font-size:18px;margin:0}
+  .btn{border:0;background:var(--accent);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  .btn.secondary{background:#111}
+  .btn.ghost{background:transparent;color:#111;border:1px solid #ddd}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  #status{font-size:13px;color:#555;margin-left:auto}
+  main{padding:16px}
+  nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  nav button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  section.panel{display:none;background:#fff;border:1px solid #eee;border-radius:12px;padding:14px}
+  section.panel.active{display:block}
+  h2{font-size:16px;margin:0 0 10px}
+  label{font-size:13px;color:#444}
+  input[type=text],input[type=url],input[type=color],textarea{width:100%;border:1px solid #ddd;border-radius:10px;padding:10px;font:inherit}
+  textarea{min-height:120px}
+  .grid{display:grid;gap:12px}
+  .grid.two{grid-template-columns:1fr 1fr}
+  .muted{font-size:12px;color:#666}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #eee;padding:8px 6px;text-align:left;font-size:14px}
+  .pill{display:inline-block;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:4px 8px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="id">
+    <img id="hubAvatar" src="assets/trey.svg" alt="">
+    <h1 id="hubTitle">BFF Suite Hub — <span id="hubPersona">Trey</span></h1>
+  </div>
+  <div class="row">
+    <button class="btn" id="btnLoadTJF">Load TJF</button>
+    <button class="btn ghost" id="btnImport">Import Profile</button>
+    <button class="btn ghost" id="btnReset">Reset Profile</button>
+    <button class="btn secondary" id="btnSetToken" title="Owner token used for server writes">Set Token</button>
+  </div>
+  <div id="status">Ready.</div>
+</header>
+
+<main>
+  <nav>
+    <button data-tab="core" class="active">Core Hub</button>
+    <button data-tab="stop">STOP Manager</button>
+    <button data-tab="avatar">Avatar Deploy</button>
+    <button data-tab="history">Session History</button>
+    <button data-tab="brand">Brand / Style</button>
+  </nav>
+
+  <!-- Core Hub -->
+  <section class="panel active" id="tab-core">
+    <h2>Quick Capture</h2>
+    <div class="grid">
+      <div>
+        <label>Title</label>
+        <input id="title" type="text" placeholder="Session title…"/>
+      </div>
+      <div>
+        <label>Attach file (optional)</label>
+        <input id="file" type="file"/>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div>
+        <label>Notes</label>
+        <textarea id="notes" placeholder="Paste session summary, thoughts, todos…"></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnSave">Save to Vault</button>
+      <span class="muted">Saves to your Supabase via secure Edge Function if configured; otherwise saves locally.</span>
+    </div>
+
+    <h2 style="margin-top:18px">Profile</h2>
+    <div class="grid two">
+      <div>
+        <div class="muted">Persona preview</div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+          <img id="pAvatar" src="assets/trey.svg" style="width:64px;height:64px;border-radius:50%;border:1px solid #eee;object-fit:cover">
+          <div>
+            <div style="font-weight:600" id="pName">Trey</div>
+            <div class="muted" id="pVibes">chill, hype, deep…</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="muted">Profile JSON stored locally and attached to each vault entry’s tags.</div>
+        <div style="margin-top:8px"><span class="pill" id="profileState">No profile loaded</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STOP Manager -->
+  <section class="panel" id="tab-stop">
+    <h2>STOP Rules</h2>
+    <textarea id="stopRules" placeholder="Write high-level rules you want Trey to follow…"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnSaveStop">Save STOP</button>
+      <button class="btn ghost" id="btnLoadStop">Load STOP</button>
+      <span class="muted">Stored locally as <code>bff_stop_rules</code>.</span>
+    </div>
+  </section>
+
+  <!-- Avatar Deploy -->
+  <section class="panel" id="tab-avatar">
+    <h2>Avatar Deploy</h2>
+    <div class="grid two">
+      <div>
+        <label>Avatar (Trey) path/URL</label>
+        <input id="avatarTrey" type="text" placeholder="assets/trey.svg"/>
+        <label style="margin-top:8px">Avatar (Imani) path/URL</label>
+        <input id="avatarImani" type="text" placeholder="assets/imani.svg"/>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="btnApplyAvatars">Apply to Profile</button>
+          <button class="btn ghost" id="btnDownloadProfile">Download Updated JSON</button>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          Tip: Put files under <code>/assets/</code> in your repo for easy linking (e.g., <code>assets/trey.jpg</code>).
+        </div>
+      </div>
+      <div>
+        <div class="muted">Preview</div>
+        <div style="display:flex;gap:16px;align-items:center;margin-top:8px">
+          <img id="prevTrey" src="assets/trey.svg" style="width:80px;height:80px;border-radius:50%;border:1px solid #eee;object-fit:cover">
+          <img id="prevImani" src="assets/imani.svg" style="width:80px;height:80px;border-radius:50%;border:1px solid #eee;object-fit:cover">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Session History -->
+  <section class="panel" id="tab-history">
+    <h2>Session History (local)</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn" id="btnRefreshLocal">Refresh</button>
+      <button class="btn ghost" id="btnExportLocal">Export JSON</button>
+      <button class="btn ghost" id="btnClearLocal">Clear Local</button>
+    </div>
+    <table id="hist">
+      <thead><tr><th>When</th><th>Title</th><th>Preview</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="muted" style="margin-top:6px">These are notes saved locally (key: <code>trey_notes</code>). Vault entries saved via your Edge Function aren’t listed here yet.</div>
+  </section>
+
+  <!-- Brand / Style -->
+  <section class="panel" id="tab-brand">
+    <h2>Brand / Style</h2>
+    <div class="grid two">
+      <div>
+        <label>Accent color</label>
+        <input id="brandAccent" type="color" value="#4f46e5"/>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="btnSaveBrand">Save Brand</button>
+          <button class="btn ghost" id="btnLoadBrand">Load Brand</button>
+        </div>
+        <div class="muted" style="margin-top:8px">Saved locally as <code>bff_brand</code> and applied via CSS variable.</div>
+      </div>
+      <div>
+        <div class="muted">Live preview</div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <span class="pill" style="background:var(--accent);color:#fff;border-color:var(--accent)">Accent</span>
+          <button class="btn">Primary</button>
+          <button class="btn secondary">Secondary</button>
+          <button class="btn ghost">Ghost</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // ---------- helpers ----------
+  const $ = (id)=>document.getElementById(id);
+  const status = (m)=>{ const el=$("status"); if(el) el.textContent=m; };
+
+  // Supabase endpoint derived from window.BFF_SUPABASE if present
+  const cfg = (window.BFF_SUPABASE||{});
+  const anon = cfg.anon||"";
+  const funcBase = cfg.url ? cfg.url.replace(".supabase.co",".functions.supabase.co") : "";
+  const VAULT_ENDPOINT = funcBase ? funcBase + "/vault_save" : "";
+
+  // Owner token stored locally
+  function getOwner(){ return localStorage.getItem("bff_owner_token")||""; }
+  function setOwner(){
+    const v = prompt("Paste your OWNER_TOKEN (kept locally on this device):", getOwner());
+    if (v) { localStorage.setItem("bff_owner_token", v.trim()); alert("Saved."); }
+  }
+
+  // Profile storage / parsing
+  function parseProfileLoose(text){
+    if(!text) return null;
+    try{ return JSON.parse(text); }catch{}
+    try{
+      let s = text.replace(/^\uFEFF/,"").replace(/,\s*([}\]])/g,"$1");
+      return JSON.parse(s);
+    }catch{ return null; }
+  }
+  function setProfileText(text){
+    localStorage.setItem("bff_profile_json", text||"");
+    const j = parseProfileLoose(text);
+    if(j) applyProfile(j); else status("Profile stored (raw JSON).");
+  }
+  function applyProfile(j){
+    const p = j?.personas?.[0] || {};
+    $("hubPersona").textContent = p.name || "Profile";
+    if(p.avatar){ $("hubAvatar").src = p.avatar; $("pAvatar").src = p.avatar; }
+    $("pName").textContent = p.name || "Profile";
+    $("pVibes").textContent = (p.vibes||[]).join(", ");
+    $("profileState").textContent = "Loaded";
+    $("profileState").className = "pill";
+    status("Profile loaded ✅");
+  }
+  async function loadTJF(){
+    const candidates = [
+      "/bff-suite/assets/TJF_BFF_Profile.json",
+      "assets/TJF_BFF_Profile.json"
+    ];
+    for(const url of candidates){
+      try{
+        const r = await fetch(url,{cache:"no-store"});
+        if(r.ok){ const t=await r.text(); setProfileText(t); status("Loaded from "+url); return; }
+      }catch{}
+    }
+    alert("Could not load TJF_BFF_Profile.json. Ensure it exists under trey-suite/assets/ and is deployed.");
+  }
+  function resetProfile(){
+    localStorage.removeItem("bff_profile_json");
+    $("hubPersona").textContent="Trey";
+    $("hubAvatar").src="assets/trey.svg";
+    $("pAvatar").src="assets/trey.svg";
+    $("pName").textContent="Trey";
+    $("pVibes").textContent="chill, hype, deep…";
+    $("profileState").textContent = "No profile loaded";
+    status("Profile reset.");
+  }
+
+  // STOP rules
+  function saveSTOP(){
+    localStorage.setItem("bff_stop_rules", $("stopRules").value||"");
+    status("STOP saved.");
+  }
+  function loadSTOP(){
+    $("stopRules").value = localStorage.getItem("bff_stop_rules") || "";
+    status("STOP loaded.");
+  }
+
+  // Avatar deploy
+  function applyAvatarsToProfile(){
+    const text = localStorage.getItem("bff_profile_json");
+    if(!text){ alert("Load or import a profile first."); return; }
+    const j = parseProfileLoose(text) || {};
+    j.personas = j.personas || [];
+    if(!j.personas[0]) j.personas[0] = { id:"trey", name:"Trey" };
+    if(!j.personas[1]) j.personas[1] = { id:"imani", name:"Imani" };
+    j.personas[0].avatar = $("avatarTrey").value || "assets/trey.svg";
+    j.personas[1].avatar = $("avatarImani").value || "assets/imani.svg";
+    const out = JSON.stringify(j,null,2);
+    localStorage.setItem("bff_profile_json", out);
+    $("prevTrey").src = j.personas[0].avatar;
+    $("prevImani").src = j.personas[1].avatar;
+    applyProfile(j);
+    status("Avatars applied to profile.");
+  }
+  function downloadProfile(){
+    const text = localStorage.getItem("bff_profile_json") || "{}";
+    const blob = new Blob([text], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "TJF_BFF_Profile.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // Brand
+  function saveBrand(){
+    const brand = { accent: $("brandAccent").value || "#4f46e5" };
+    localStorage.setItem("bff_brand", JSON.stringify(brand));
+    applyBrand(brand);
+    status("Brand saved.");
+  }
+  function loadBrand(){
+    const j = JSON.parse(localStorage.getItem("bff_brand") || "{}");
+    $("brandAccent").value = j.accent || "#4f46e5";
+    applyBrand(j);
+    status("Brand loaded.");
+  }
+  function applyBrand(j){
+    document.documentElement.style.setProperty("--accent", j.accent || "#4f46e5");
+  }
+
+  // Save to Vault (Edge Function) or local fallback
+  async function saveToVault(){
+    const title = $("title").value.trim();
+    const notes = $("notes").value.trim();
+    const file = $("file").files[0];
+    if(!title && !notes && !file){ alert("Type a title or notes, or attach a file."); return; }
+
+    const prof = localStorage.getItem("bff_profile_json");
+    const owner = getOwner();
+
+    if(VAULT_ENDPOINT && anon && owner){
+      const fd = new FormData();
+      fd.append("title", title);
+      fd.append("body",  notes);
+      if (prof) fd.append("tags", prof);
+      if (file) fd.append("file", file);
+      status("Saving to vault…");
+      const res = await fetch(VAULT_ENDPOINT, {
+        method:"POST",
+        headers:{ "Authorization":"Bearer "+anon, "apikey":anon, "x-bff-owner":owner },
+        body: fd
+      }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+      if(res.ok){
+        $("title").value=""; $("notes").value=""; $("file").value="";
+        status("Saved to vault ✅");
+      } else {
+        status("Vault error — saved locally instead.");
+        saveLocal(title, notes);
+      }
+    } else {
+      saveLocal(title, notes);
+      status("Saved locally (vault not configured).");
+    }
+  }
+
+  // Local save for history
+  function saveLocal(title, notes){
+    const k = "trey_notes";
+    const all = JSON.parse(localStorage.getItem(k) || "[]");
+    all.push({ t: Date.now(), title: title || "(untitled)", text: notes || "" });
+    localStorage.setItem(k, JSON.stringify(all));
+    renderLocal();
+  }
+
+  function renderLocal(){
+    const k = "trey_notes";
+    const all = JSON.parse(localStorage.getItem(k) || "[]").slice().reverse();
+    const tb = $("hist").querySelector("tbody");
+    tb.innerHTML = all.map(r=>{
+      const d = new Date(r.t);
+      const dt = d.toLocaleString();
+      const prev = (r.text||"").slice(0,80).replace(/\s+/g," ");
+      const title = (r.title||"").slice(0,60);
+      return `<tr><td>${dt}</td><td>${title}</td><td>${prev}</td></tr>`;
+    }).join("") || `<tr><td colspan="3" class="muted">No local entries yet.</td></tr>`;
+  }
+  function exportLocal(){
+    const k="trey_notes"; const text=localStorage.getItem(k)||"[]";
+    const blob = new Blob([text], {type:"application/json"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download="bff_notes.json"; a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function clearLocal(){
+    if(confirm("Clear all local notes?")){ localStorage.removeItem("trey_notes"); renderLocal(); }
+  }
+
+  // tabs
+  document.querySelectorAll("nav button[data-tab]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      const id = "tab-"+btn.dataset.tab;
+      document.querySelectorAll("section.panel").forEach(s=>s.classList.remove("active"));
+      $(id).classList.add("active");
+      if(id==="tab-history") renderLocal();
+    });
+  });
+
+  // wire buttons
+  $("btnLoadTJF").onclick = loadTJF;
+  $("btnImport").onclick  = ()=>{
+    const inp = document.createElement("input");
+    inp.type="file"; inp.accept="application/json";
+    inp.onchange = async ()=>{ const f=inp.files?.[0]; if(!f)return; const t=await f.text(); setProfileText(t); };
+    inp.click();
+  };
+  $("btnReset").onclick   = resetProfile;
+  $("btnSetToken").onclick= setOwner;
+  $("btnSave").onclick    = saveToVault;
+
+  $("btnSaveStop").onclick = saveSTOP;
+  $("btnLoadStop").onclick = loadSTOP;
+
+  $("btnApplyAvatars").onclick = applyAvatarsToProfile;
+  $("btnDownloadProfile").onclick = downloadProfile;
+
+  $("btnRefreshLocal").onclick = renderLocal;
+  $("btnExportLocal").onclick  = exportLocal;
+  $("btnClearLocal").onclick   = clearLocal;
+
+  // boot
+  (function boot(){
+    // profile
+    const text = localStorage.getItem("bff_profile_json");
+    const j = parseProfileLoose(text);
+    if(j) applyProfile(j);
+    // brand
+    const b = JSON.parse(localStorage.getItem("bff_brand") || "{}");
+    applyBrand(b);
+    if (b.accent) $("brandAccent").value = b.accent;
+    // avatar tab fields
+    $("avatarTrey").value  = "assets/trey.svg";
+    $("avatarImani").value = "assets/imani.svg";
+  })();
+</script>
+</body>
+</html>
