@@ -130,6 +130,41 @@
       if (j) applyProfile(j); else if (text) status("Profile stored (raw JSON).");
     })();
   </script>
+<style>.ai-badge{margin-left:8px;background:#111;color:#fff;border-radius:9999px;padding:2px 8px;font-size:11px}</style>
+<script>
+(function(){
+  function parseLoose(t){
+    if(!t) return null;
+    try{ return JSON.parse(t); }catch(e){}
+    try{ t=t.replace(/^\\uFEFF/,"").replace(/,\\s*([}\\]])/g,"$1"); return JSON.parse(t); }catch(e){ return null; }
+  }
+  function ensureBadge(){
+    let b=document.getElementById('aiBadge');
+    if(!b){
+      b=document.createElement('span'); b.id='aiBadge'; b.className='ai-badge';
+      const head=document.querySelector('header .id'); if(head) head.appendChild(b);
+    }
+    return b;
+  }
+  function looksAI(avatar, p){
+    const a=(avatar||'').toLowerCase();
+    return !!(p?.synthetic_media || /(^|[_-])ai\\./.test(a));
+  }
+  function update(){
+    const j = parseLoose(localStorage.getItem('bff_profile_json'));
+    const p = j?.personas?.[0] || null;
+    const isAI = p ? looksAI(p.avatar, p) : looksAI((document.getElementById('avatar')||{}).src, null);
+    const b=ensureBadge();
+    b.textContent = isAI ? 'AI-generated' : '';
+    b.style.display = isAI ? 'inline-block' : 'none';
+    const av=document.getElementById('avatar'); if(av && isAI) av.alt='AI-generated portrait';
+  }
+  const _apply = window.applyProfile;
+  window.applyProfile = function(o){ if(typeof _apply==='function') _apply(o); try{ update(); }catch(e){} };
+  document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
 </body>
 </html>
+
 

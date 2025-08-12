@@ -443,6 +443,47 @@
     if(j) applyPersona(j, pid); else renderPersonaFallback(pid);
   })();
 </script>
+<style>.ai-badge{margin-left:8px;background:#111;color:#fff;border-radius:9999px;padding:2px 8px;font-size:11px}</style>
+<script>
+(function(){
+  function parseLoose(t){
+    if(!t) return null;
+    try{ return JSON.parse(t); }catch(e){}
+    try{ t=t.replace(/^\\uFEFF/,"").replace(/,\\s*([}\\]])/g,"$1"); return JSON.parse(t); }catch(e){ return null; }
+  }
+  function ensureBadge(){
+    let b=document.getElementById('aiBadgeHub');
+    if(!b){
+      b=document.createElement('span'); b.id='aiBadgeHub'; b.className='ai-badge';
+      const title=document.getElementById('hubTitle'); if(title) title.appendChild(b);
+    }
+    return b;
+  }
+  function looksAI(avatar, p){
+    const a=(avatar||'').toLowerCase();
+    return !!(p?.synthetic_media || /(^|[_-])ai\\./.test(a));
+  }
+  function getPersonaId(){
+    const v = localStorage.getItem('bff_persona_id');
+    const n = (v===null||v==='') ? 0 : parseInt(v,10);
+    return isNaN(n)?0:Math.max(0,Math.min(n,99));
+  }
+  function update(){
+    const j = parseLoose(localStorage.getItem('bff_profile_json'));
+    const pid = getPersonaId();
+    const p = (Array.isArray(j?.personas)?j.personas:[])[pid] || (j?.personas?.[0]) || null;
+    const isAI = p ? looksAI(p.avatar, p) : false;
+    const b=ensureBadge();
+    b.textContent = isAI ? 'AI-generated' : '';
+    b.style.display = isAI ? 'inline-block' : 'none';
+    const av=document.getElementById('pAvatar'); if(av && isAI) av.alt='AI-generated portrait';
+  }
+  const _applyPersona = window.applyPersona;
+  window.applyPersona = function(j,n){ if(typeof _applyPersona==='function') _applyPersona(j,n); try{ update(); }catch(e){} };
+  document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
 </body>
 </html>
+
 
