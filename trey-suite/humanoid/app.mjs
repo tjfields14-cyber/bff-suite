@@ -7,10 +7,10 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/control
 
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs start (esm.sh)");
+log("🚀 app.mjs start (esm.sh + bone)");
 
+// Try local model first, then public sample
 const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href;
-// Small public sample (OK for testing only)
 const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
@@ -36,11 +36,8 @@ function init(){
   const key = new DirectionalLight(0xffffff,1.1); key.position.set(1.5,2.8,1.6); scene.add(key);
   const rim = new DirectionalLight(0x88bbff,0.6); rim.position.set(-2.0,1.8,-1.5); scene.add(rim);
 
-  // Fallback head (always visible first)
-  fallback = new Mesh(
-    new IcosahedronGeometry(0.25,3),
-    new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05})
-  );
+  // Fallback head first
+  fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
   fallback.position.set(0,1.6,0);
   scene.add(fallback);
   log("✓ Fallback visible");
@@ -50,7 +47,7 @@ function init(){
   // Buttons
   document.getElementById("micBtn").onclick   = enableMic;
   document.getElementById("ttsBtn").onclick   = ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); };
-  document.getElementById("debugBtn").onclick = showMorphDebug;
+  document.getElementById("debugBtn").onclick = showMorphAndBoneDebug;
   document.getElementById("testBtn").onclick  = ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 800); };
 
   requestAnimationFrame(loop);
@@ -64,20 +61,32 @@ function tryLoadGLB(url, isSample=false){
       const root = g.scene || (g.scenes && g.scenes[0]);
       if (!root){ log("❌ GLB has no scene"); return reject(new Error("no scene")); }
 
+      // Find meshes/morphs AND likely jaw/mouth bones
       root.traverse((o)=>{
         if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
         if (o.isSkinnedMesh){
           skinned = o;
+          // Choose a mouth-open morph if present
           const dict = o.morphTargetDictionary || {};
-          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen"];
+          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen","open"];
           for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
           if (morphMap.open===undefined){
             const cand = Object.keys(dict).find(k=>/jaw|open|aa|mouth/i.test(k));
             if (cand) morphMap.open = dict[cand];
           }
         }
-        if (!jaw && /jaw/i.test(o.name)) jaw = o;
       });
+
+      if (!jaw){
+        // Pass 1: explicit jaw/mouth/chin names
+        root.traverse((o)=>{
+          if (o.isBone && /(jaw|mouth|chin|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)){ jaw = o; }
+        });
+      }
+      if (!jaw){
+        // Pass 2: head as fallback bone
+        root.traverse((o)=>{ if (o.isBone && /head/i.test(o.name)){ jaw = o; } });
+      }
 
       // Frame model
       const box = new Box3().setFromObject(root);
@@ -89,10 +98,11 @@ function tryLoadGLB(url, isSample=false){
       scene.add(root);
       if (fallback){ scene.remove(fallback); fallback=null; }
       log((isSample?"✓ SAMPLE ":"✓ ") + "Model loaded. Open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
+      log("• Jaw bone: " + (jaw ? jaw.name : "none"));
       resolve();
     }, undefined, (err)=>{
       log("ℹ Failed to load "+(isSample?"SAMPLE ":"")+"GLB ("+ (err?.message || "network/error") +")");
-      if (!isSample) reject(err); else resolve(); // don't chain further after sample
+      if (!isSample) reject(err); else resolve();
     });
   });
 }
@@ -102,8 +112,7 @@ function enableMic(){
   navigator.mediaDevices.getUserMedia({audio:true}).then((stream)=>{
     const ac = new (window.AudioContext||window.webkitAudioContext)();
     const src = ac.createMediaStreamSource(stream);
-    analyser = ac.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser = ac.createAnalyser(); analyser.fftSize = 2048;
     dataArray = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
     log("✓ Mic on. Speak (or press 🧪).");
@@ -120,33 +129,52 @@ function amplitude(){
 function driveMouth(){
   const micOpen = Math.min(1, amplitude()*6);
   const open = Math.max(testOpen, micOpen);
+
+  // Blendshape route
   if (skinned && morphMap.open !== undefined && skinned.morphTargetInfluences){
     skinned.morphTargetInfluences[morphMap.open] = open;
   }
-  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
+  // Bone route (if we have a jaw-like bone)
+  if (jaw){
+    jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35);
+  }
+  // Fallback visual
   if (fallback){
     fallback.rotation.y += 0.01;
     fallback.scale.setScalar(1 + open*0.2);
   }
 }
 
-function showMorphDebug(){
-  let out = "Morph Debug\\n===========\\n";
-  let found = 0;
+function showMorphAndBoneDebug(){
+  let out = "Debug\n=====\n";
+  // Morphs
+  let foundMorph = 0;
   scene.traverse((o)=>{
     if (o.isSkinnedMesh && o.morphTargetDictionary){
-      found++;
-      out += "Mesh: "+o.name+"\\n";
+      foundMorph++;
+      out += `Mesh: ${o.name}\n`;
       const dict=o.morphTargetDictionary;
       const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
       for (const k of keys){
         const mark = (morphMap.open!==undefined && dict[k]===morphMap.open) ? "  (chosen: open)" : "";
-        out += "  - "+k+mark+"\\n";
+        out += `  - ${k}${mark}\n`;
       }
     }
   });
-  if (!found) out += "- No skinned meshes with morph targets found.\\n";
-  out += "Jaw: "+(jaw?jaw.name:"none")+"\\n";
+  if (!foundMorph) out += "- No morph targets found.\n";
+
+  // Bones
+  let foundBone = 0;
+  scene.traverse((o)=>{
+    if (o.isBone){
+      foundBone++;
+      const mark = (jaw && o===jaw) ? "  (chosen: jaw)" : "";
+      out += `Bone: ${o.name}${mark}\n`;
+    }
+  });
+  if (!foundBone) out += "- No bones found.\n";
+
+  out += `\nChosen jaw: ${jaw?jaw.name:"none"}\nChosen morph index: ${morphMap.open===undefined?"none":morphMap.open}\n`;
   log(out);
   try{ console.clear(); console.log(out); }catch(e){}
 }
