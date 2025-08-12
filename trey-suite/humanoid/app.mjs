@@ -9,7 +9,9 @@ const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
 log("🚀 app.mjs start (esm.sh)");
 
-const urlGLB = new URL("../assets/humanoid.glb", import.meta.url).href;
+const localGLB  = new URL("../assets/humanoid.glb", import.meta.url).href;
+// Small public sample (OK for testing only)
+const sampleGLB = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb";
 
 let renderer, scene, camera, controls;
 let fallback=null, skinned=null, morphMap={}, jaw=null;
@@ -43,7 +45,7 @@ function init(){
   scene.add(fallback);
   log("✓ Fallback visible");
 
-  tryLoadGLB();
+  tryLoadGLB(localGLB).catch(()=> tryLoadGLB(sampleGLB, true));
 
   // Buttons
   document.getElementById("micBtn").onclick   = enableMic;
@@ -55,40 +57,43 @@ function init(){
   log("✅ render loop running");
 }
 
-function tryLoadGLB(){
-  log("… loading GLB: "+urlGLB);
-  new GLTFLoader().load(urlGLB,(g)=>{
-    const root = g.scene || (g.scenes && g.scenes[0]);
-    if (!root){ log("❌ GLB has no scene"); return; }
+function tryLoadGLB(url, isSample=false){
+  log((isSample?"… loading SAMPLE GLB: ":"… loading GLB: ") + url);
+  return new Promise((resolve, reject)=>{
+    new GLTFLoader().load(url,(g)=>{
+      const root = g.scene || (g.scenes && g.scenes[0]);
+      if (!root){ log("❌ GLB has no scene"); return reject(new Error("no scene")); }
 
-    root.traverse((o)=>{
-      if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
-      if (o.isSkinnedMesh){
-        skinned = o;
-        const dict = o.morphTargetDictionary || {};
-        const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen"];
-        for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
-        if (morphMap.open===undefined){
-          const keys = Object.keys(dict);
-          const cand = keys.find(k=>/jaw|open|aa|mouth/i.test(k));
-          if (cand) morphMap.open = dict[cand];
+      root.traverse((o)=>{
+        if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; }
+        if (o.isSkinnedMesh){
+          skinned = o;
+          const dict = o.morphTargetDictionary || {};
+          const preferred = ["jawOpen","MouthOpen","viseme_aa","A","aa","vowels_Open","mouthOpen"];
+          for (const n of preferred){ if (n in dict){ morphMap.open = dict[n]; break; } }
+          if (morphMap.open===undefined){
+            const cand = Object.keys(dict).find(k=>/jaw|open|aa|mouth/i.test(k));
+            if (cand) morphMap.open = dict[cand];
+          }
         }
-      }
-      if (!jaw && /jaw/i.test(o.name)) jaw = o;
+        if (!jaw && /jaw/i.test(o.name)) jaw = o;
+      });
+
+      // Frame model
+      const box = new Box3().setFromObject(root);
+      const size = box.getSize(new Vector3()).length();
+      const center = box.getCenter(new Vector3());
+      controls.target.copy(center);
+      camera.position.set(center.x, center.y + size*0.2, center.z + size*0.9);
+
+      scene.add(root);
+      if (fallback){ scene.remove(fallback); fallback=null; }
+      log((isSample?"✓ SAMPLE ":"✓ ") + "Model loaded. Open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
+      resolve();
+    }, undefined, (err)=>{
+      log("ℹ Failed to load "+(isSample?"SAMPLE ":"")+"GLB ("+ (err?.message || "network/error") +")");
+      if (!isSample) reject(err); else resolve(); // don't chain further after sample
     });
-
-    // Frame model
-    const box = new Box3().setFromObject(root);
-    const size = box.getSize(new Vector3()).length();
-    const center = box.getCenter(new Vector3());
-    controls.target.copy(center);
-    camera.position.set(center.x, center.y + size*0.2, center.z + size*0.9);
-
-    scene.add(root);
-    if (fallback){ scene.remove(fallback); fallback=null; }
-    log("✓ Model loaded. Chosen open morph index: " + (morphMap.open===undefined ? "none" : morphMap.open));
-  }, undefined, ()=>{
-    log("ℹ GLB missing or failed to load; staying on fallback.");
   });
 }
 
