@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>BFF Humanoid (modules)</title>
-<!-- inline favicon to stop 404 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='%230b0b0c'/%3E%3Ctext x='50%25' y='58%25' dominant-baseline='middle' text-anchor='middle' font-size='40' fill='%23e5e7eb' font-family='Segoe UI,Arial'%3E🤖%3C/text%3E%3C/svg%3E"/>
 <style>
   html,body{margin:0;height:100%;background:#0b0b0c;overflow:hidden;color:#e5e7eb;font:14px ui-sans-serif,system-ui}
@@ -20,10 +19,25 @@
   <button id="ttsBtn">🔊 Test TTS</button>
   <button id="debugBtn">🔎 Morph Debug</button>
   <button id="testBtn">🧪 Mouth Open</button>
-  <span id="stamp">stamp: 2025-08-12 14:47:56</span>
+  <span id="stamp">stamp: 2025-08-12_15-07-04</span>
 </div>
 <div id="log">Booting…</div>
 <canvas id="c"></canvas>
-<script type="module" src="./app.mjs"></script>
+
+<!-- Bootstrap logger: imports app.mjs with a cache-busting query and prints results -->
+<script type="module">
+  const logEl = document.getElementById('log');
+  const log = (s)=> logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s;
+  log("🔧 Bootstrap running…");
+  try {
+    const ver = "v=2025-08-12_15-07-04"; // cache-bust
+    await import(./app.mjs?);
+    log("✅ app.mjs imported.");
+  } catch (e) {
+    log("❌ Failed to import app.mjs");
+    log(String(e && e.message ? e.message : e));
+  }
+</script>
+<noscript><div id="log">❌ JavaScript is disabled.</div></noscript>
 </body>
 </html>
