@@ -458,9 +458,50 @@ let prev=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dt = (now-(prev||now))/1000; prev = now;
-  clampCamera(); keepModelVisible(); controls.update();
+  clampCamera(); keepModelVisible(); controls.update(); updateHead(dt);
   driveMouth(dt);
   driveBlinkBreath(dt);
   renderer.render(scene,camera);
 }
 
+
+//
+// === Head aim + nod/shake ===
+let _aimX = 0, _aimY = 0;            // mouse (-1..1)
+let _nod = 0, _shake = 0;            // oscillators
+let _nodV = 0, _shakeV = 0;          // impulses that decay
+
+addEventListener('mousemove', (e)=>{
+  const nx = (e.clientX / innerWidth) * 2 - 1;  // -1..1
+  const ny = (e.clientY / innerHeight) * 2 - 1; // -1..1
+  _aimX = Math.max(-1, Math.min(1, nx));
+  _aimY = Math.max(-1, Math.min(1, ny));
+});
+
+// Y = nod, N = shake
+addEventListener('keydown', (e)=>{
+  const k = e.key?.toLowerCase();
+  if (k === 'y') _nodV   = 1.6;
+  if (k === 'n') _shakeV = 1.6;
+});
+
+function updateHead(dt){
+  if (!headBone) return;
+  // decay impulses
+  _nodV   *= 0.90;
+  _shakeV *= 0.90;
+  _nod   += _nodV   * dt * 6.0;
+  _shake += _shakeV * dt * 6.0;
+
+  // mouse aim limits
+  const maxYaw   = 0.35;  // left/right
+  const maxPitch = 0.30;  // up/down
+
+  // compose target angles (mouse + impulse oscillation)
+  const yaw   = (_aimX * maxYaw)   + Math.sin(_shake * 8.0) * 0.08 * _shakeV;
+  const pitch = (-_aimY * maxPitch)+ Math.sin(_nod   *10.0) * 0.10 * _nodV;
+
+  // smooth (we already import MathUtils in app.mjs)
+  headBone.rotation.y = MathUtils.lerp(headBone.rotation.y, yaw,   0.20);
+  headBone.rotation.x = MathUtils.lerp(headBone.rotation.x, pitch, 0.20);
+}
