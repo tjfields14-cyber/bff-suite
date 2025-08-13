@@ -1,7 +1,7 @@
 ﻿import {
   WebGLRenderer, Scene, PerspectiveCamera, AmbientLight, DirectionalLight,
   Color, IcosahedronGeometry, MeshStandardMaterial, MeshBasicMaterial, Mesh,
-  Box3, Vector3, MathUtils, TorusGeometry, Box3Helper, GridHelper, AxesHelper, Sphere
+  Box3, Vector3, MathUtils, GridHelper, AxesHelper, Sphere, TorusGeometry, Box3Helper
 } from "https://esm.sh/three@0.160.0";
 import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
@@ -43,7 +43,6 @@ function addTuningUI(){
   `;
   document.body.appendChild(wrap);
 
-  // Speak bar (new)
   const speak = el("div");
   speak.style.cssText = `
     position:fixed; left:12px; top:12px; z-index:10;
@@ -52,7 +51,7 @@ function addTuningUI(){
     padding:8px 10px; font:12px ui-sans-serif,system-ui; width:560px;
   `;
   speak.innerHTML = `
-    <input id="sayText" value="Hey Trey, this is a live test of the lipsync. One, two, three — go!"
+    <input id="sayText" value="Mooo, aah, eee — blink & breathe test!"
       style="flex:1; background:#181818; color:#eee; border:1px solid #333; border-radius:8px; padding:8px 10px; outline:none;">
     <button id="sayBtn" style="background:#0ea5e9;border:0;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer">Speak</button>
     <button id="stopBtn" style="background:#ef4444;border:0;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer">Stop</button>
@@ -89,9 +88,6 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
-let morphTargets = []; // [{ mesh, index, name }]
-let morphNameOpen = null;
-
 let modelRoot = null;
 let sceneSphere = null;
 let boxHelper = null;
@@ -99,13 +95,26 @@ let boxHelper = null;
 let wire = false;
 let basic = true;
 
-// Tuning UI (+ speak bar)
 const ui = addTuningUI();
 ui.setLabels(ui.gain, ui.gate, ui.smooth);
 
-// TTS → viseme override (0..1) that decays
-let viseme = 0;
-let visemeDecay = 0.92;
+// multi-viseme (from previous step)
+let visAA=0, visEE=0, visOO=0;
+const decay = 0.92;
+let openMicSmoothed = 0;
+
+// morph groups (now includes blink)
+const morphGroups = { open:[], aa:[], ee:[], oo:[], blink:[] };
+let morphNameOpen = null;
+
+// breathing/blink state
+let breathT = 0;
+let breathNode = null; // chest/torso/head fallback
+let blinkT = 0;
+let nextBlinkAt = 1.0 + Math.random()*2.5; // seconds
+let blinkDur = 0.14; // seconds for single blink
+let doubleBlinkChance = 0.18;
+let inDoubleBlinkGap = false;
 
 // ---------- Init ----------
 init();
@@ -129,8 +138,8 @@ function init(){
   controls.enableDamping = true;
 
   scene.add(new AmbientLight(0xffffff, 0.95));
-  const key = new DirectionalLight(0xffffff, 1.7); key.position.set(3.0,3.0,2.0); scene.add(key);
-  const rim = new DirectionalLight(0x88bbff, 1.0); rim.position.set(-3.0,2.0,-2.0); scene.add(rim);
+  const key = new DirectionalLight(0xffffff, 1.7); key.position.set(3,3,2); scene.add(key);
+  const rim = new DirectionalLight(0x88bbff, 1.0); rim.position.set(-3,2,-2); scene.add(rim);
 
   scene.add(new GridHelper(20, 20, 0x335577, 0x223344));
   const axes = new AxesHelper(0.5); axes.position.set(0,1.0,0); scene.add(axes);
@@ -141,13 +150,11 @@ function init(){
 
   loadGLB(localGLB);
 
-  // Buttons from page
   document.getElementById("micBtn")   ?.addEventListener("click", enableMic);
   document.getElementById("ttsBtn")   ?.addEventListener("click", ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); });
   document.getElementById("debugBtn") ?.addEventListener("click", showDebug);
   document.getElementById("testBtn")  ?.addEventListener("click", ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); });
 
-  // Speak bar hooks
   ui.onSpeak(speakText);
   ui.onStop(()=> speechSynthesis.cancel());
 
@@ -161,16 +168,7 @@ function init(){
   log("✅ render loop running — press W (wireframe) / B (basic)");
 }
 
-// ---------- Import helpers ----------
-function pickOpen(dict){
-  const entries = Object.entries(dict);
-  const prefer = [/^surprised$/i, /jawopen/i, /mouthopen/i, /^open$/i, /viseme_aa/i, /^aa$/i, /open/i, /o$/i];
-  let hit = entries.find(([n])=> prefer.some(rx=>rx.test(n)));
-  if (!hit && entries.length) hit = entries[0];
-  if (!hit) return null;
-  return { name: hit[0], index: hit[1] };
-}
-
+// ---------- Helpers ----------
 function captureOriginalMaterials(root){
   root.traverse(o=>{
     if (o.isMesh){
@@ -218,37 +216,47 @@ function applyWireframe(w){
   });
 }
 
+function addMorph(dictArr, mesh, dict){
+  for (const [name, idx] of Object.entries(dict)){
+    // speech buckets
+    if (/(^|_|-)(aa|ah|a)(_|-|$)/i.test(name)) dictArr.aa.push({mesh,index:idx,name});
+    else if (/(^|_|-)(ee|ih|i|iy)(_|-|$)/i.test(name)) dictArr.ee.push({mesh,index:idx,name});
+    else if (/(^|_|-)(oh|oo|uw|ou|o|u)(_|-|$)/i.test(name)) dictArr.oo.push({mesh,index:idx,name});
+    else if (/surprised|jawopen|mouthopen|(^|_|-)open($|_|-)/i.test(name)) dictArr.open.push({mesh,index:idx,name});
+    // blinks
+    if (/blink|eye.?close|eyes.?closed/i.test(name)) dictArr.blink.push({mesh,index:idx,name});
+  }
+}
+
 function loadGLB(url){
   log("… loading GLB: " + url);
   new GLTFLoader().load(url,(g)=>{
     const root = g.scene || (g.scenes && g.scenes[0]);
     if (!root){ log("❌ GLB has no scene"); return; }
 
-    morphTargets = []; morphNameOpen = null; jaw = null; headBone = null;
+    // reset groups
+    morphGroups.open = []; morphGroups.aa=[]; morphGroups.ee=[]; morphGroups.oo=[]; morphGroups.blink=[];
+    morphNameOpen = null; jaw=null; headBone=null; breathNode=null;
 
     root.traverse((o)=>{
       if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; hardenPBR(o); }
       if (o.morphTargetDictionary && o.morphTargetInfluences){
-        const pick = pickOpen(o.morphTargetDictionary);
-        if (pick){
-          morphTargets.push({ mesh:o, index:pick.index, name:pick.name });
-          if (!morphNameOpen) morphNameOpen = pick.name;
-        }
+        addMorph(morphGroups, o, o.morphTargetDictionary);
       }
       if (!jaw && o.isBone && /(jaw|mouth|lowerlip|lower_lip|lowerjaw|lower_jaw)/i.test(o.name)) jaw = o;
       if (!headBone && o.isBone && /head/i.test(o.name)) headBone = o;
+      // pick a breathing node (chest/torso/spine), fallback to root
+      if (!breathNode && o.isBone && /(chest|spine|torso|abdomen)/i.test(o.name)) breathNode = o;
     });
     if (!headBone){
       root.traverse((o)=>{ if (!headBone && o.isBone && /neck/i.test(o.name)) headBone = o; });
     }
+    if (!breathNode) breathNode = headBone || root;
 
-    modelRoot = root;
-    scene.add(root);
+    modelRoot = root; scene.add(root);
+    captureOriginalMaterials(root); applyBasic(true);
 
-    captureOriginalMaterials(root);
-    applyBasic(true);
-
-    // Fit camera
+    // camera fit
     const box = new Box3().setFromObject(root);
     const center = box.getCenter(new Vector3());
     const sphere = new Sphere(); box.getBoundingSphere(sphere);
@@ -260,7 +268,6 @@ function loadGLB(url){
     if (boxHelper) scene.remove(boxHelper);
     boxHelper = new Box3Helper(box, 0x33ff88); scene.add(boxHelper);
 
-    // Mouth ring
     if (!mouthMarker){
       mouthMarker = new Mesh(new TorusGeometry(0.10, 0.022, 16, 32), new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35}));
       mouthMarker.visible = true;
@@ -268,17 +275,18 @@ function loadGLB(url){
     (jaw || headBone || root).add(mouthMarker);
     mouthMarker.position.set(0, -0.10, 0.22);
 
-    log(`✓ Model loaded. Morph picks: ${morphTargets.length}`);
-    if (morphTargets.length){
-      log(`• Chosen morph name: '${morphNameOpen}' on ${morphTargets.length} mesh(es)`);
-      for (const t of morphTargets){ log(`  - ${t.mesh.name} → ${t.name} [${t.index}]`); }
-    }
-    log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
-    log("Tip: type text in the Speak bar and press Speak. Mic + sliders still work.");
+    if (morphGroups.open.length) morphNameOpen = morphGroups.open[0].name;
+
+    const total = morphGroups.open.length + morphGroups.aa.length + morphGroups.ee.length + morphGroups.oo.length + morphGroups.blink.length;
+    log(`✓ Model loaded. Morph picks: ${total}`);
+    if (morphNameOpen) log(`• Chosen OPEN name: '${morphNameOpen}'`);
+    log(`• Jaw bone: ${jaw?jaw.name:"none"} • Head/Neck anchor: ${headBone?headBone.name:"none"}`);
+    if (morphGroups.blink.length) log(`• Blink targets: ${morphGroups.blink.map(b=>b.name).join(", ")}`);
+    else log("• No blink morphs detected (breathing still active).");
   }, undefined, (err)=> log("ℹ Failed to load GLB ("+ (err?.message || "network/error") +")"));
 }
 
-// ---------- Audio / mouth drive ----------
+// ---------- Audio + TTS ----------
 function enableMic(){
   log("… requesting mic");
   navigator.mediaDevices.getUserMedia({audio:true}).then((stream)=>{
@@ -297,67 +305,110 @@ function amplitude(){
   return Math.sqrt(sum/dataArray.length);
 }
 
-// TTS → simple viseme mapping
 function speakText(text){
   if (!text || !text.trim()) return;
   try{ speechSynthesis.cancel(); }catch{}
   const u = new SpeechSynthesisUtterance(text);
   u.rate = 1; u.pitch = 1; u.volume = 1;
 
-  const drive = (ch) => {
+  const driveChar = (ch) => {
     if (!ch) return;
     const c = ch.toLowerCase();
-    // very simple class-based shapes → strength
-    if ("aeáàâäeéèêë".includes(c)) viseme = 0.85;          // wide-open vowels
-    else if ("iouóòôöuúùûü".includes(c)) viseme = 1.00;    // rounder vowels → open max
-    else if ("bpmpfvw".includes(c)) viseme = 0.25;          // labials → small pop
-    else if ("sztcjx".includes(c)) viseme = 0.35;           // sibilants
-    else if ("lnrdyghkq".includes(c)) viseme = 0.55;        // mixed
-    else if (c.trim()==="") viseme = Math.max(viseme*0.6, 0.05);
-    else viseme = 0.5;
+    if ("aáàâäæ".includes(c))      { visAA = 1.0; }
+    else if ("eéèêëiíìîïy".includes(c)) { visEE = 1.0; }
+    else if ("oóòôöuúùûü".includes(c))  { visOO = 1.0; }
   };
 
   u.onboundary = (e) => {
-    // Some browsers fire "word" boundaries, others charIndex jumps. Use charIndex if present.
     const idx = (typeof e.charIndex === "number") ? e.charIndex : 0;
-    drive(text[idx]);
+    driveChar(text[idx]);
   };
-  u.onstart = ()=> { viseme = 0.9; log("▶ Speaking…"); };
-  u.onend   = ()=> { viseme = 0;   log("■ Done."); };
+  u.onstart = ()=> log("▶ Speaking…");
+  u.onend   = ()=> log("■ Done.");
 
   speechSynthesis.speak(u);
 }
 
-let openState = 0; // smoothed mic
+// ---------- Drive mouth / blink / breath ----------
+function setInfluences(list, val){
+  for (const t of list){
+    if (t.mesh.morphTargetInfluences){
+      t.mesh.morphTargetInfluences[t.index] = val;
+    }
+  }
+}
 function driveMouth(dt){
-  // mic
   const ampRaw = amplitude();
   ui.meter(ampRaw);
   const gated  = Math.max(0, ampRaw - ui.gate);
   const boosted= Math.min(1, gated * (ui.gain*2));
   const a = 1 - ui.smooth;
-  openState = (1-a)*openState + a*boosted;
+  openMicSmoothed = (1-a)*openMicSmoothed + a*boosted;
 
-  // decay viseme override
-  viseme = viseme * visemeDecay;
+  visAA *= decay; visEE *= decay; visOO *= decay;
 
-  const open = Math.max(testOpen, openState, viseme);
+  const openPow = Math.max(testOpen, openMicSmoothed, visAA*0.75, visOO*0.85, visEE*0.55);
+  const aaPow   = Math.max(visAA - 0.15, 0);
+  const eePow   = Math.max(visEE - 0.10, 0);
+  const ooPow   = Math.max(visOO - 0.10, 0);
 
-  for (const t of morphTargets){
-    if (t.mesh.morphTargetInfluences){
-      t.mesh.morphTargetInfluences[t.index] = open;
-    }
+  if (morphGroups.aa.length || morphGroups.ee.length || morphGroups.oo.length){
+    setInfluences(morphGroups.aa, aaPow);
+    setInfluences(morphGroups.ee, eePow);
+    setInfluences(morphGroups.oo, ooPow);
+    setInfluences(morphGroups.open, openPow*0.6);
+  } else {
+    setInfluences(morphGroups.open, openPow);
   }
 
-  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, open*0.25, 0.35); }
+  if (jaw){ jaw.rotation.x = MathUtils.lerp(jaw.rotation.x, openPow*0.25, 0.35); }
   if (mouthMarker){
-    const s = 1 + open*0.9;
+    const s = 1 + openPow*0.9;
     mouthMarker.scale.set(s, s*1.2, s);
-    mouthMarker.material.emissiveIntensity = 0.25 + open*1.25;
+    mouthMarker.material.emissiveIntensity = 0.25 + openPow*1.25;
   }
   if (fallback){
     fallback.rotation.y += 0.01;
-    fallback.scale.setScalar(1 + open*0.2);
+    fallback.scale.setScalar(1 + openPow*0.2);
+  }
+}
+
+// idle breathing + eye blinks
+function driveBlinkBreath(dt){
+  // breathing
+  breathT += dt;
+  const br = 0.015 * Math.sin(breathT * 2.0); // ~0.3 Hz
+  if (breathNode){
+    const b = 1 + br;
+    try{ breathNode.scale.set(b, 1+br*1.5, b); }catch{}
+    if (headBone){
+      const sway = 0.006 * Math.sin(breathT * 1.7);
+      headBone.rotation.x = MathUtils.lerp(headBone.rotation.x, sway, 0.2);
+    }
+  }
+
+  // blinks
+  blinkT += dt;
+  let blinkPow = 0;
+  if (blinkT >= nextBlinkAt){
+    const phase = (blinkT - nextBlinkAt) / blinkDur; // 0..1
+    if (phase <= 1){
+      // simple "up-down" triangle
+      blinkPow = phase < 0.5 ? (phase*2) : (1-(phase-0.5)*2);
+    } else {
+      // blink done; schedule next (sometimes double-blink)
+      if (!inDoubleBlinkGap && Math.random() < doubleBlinkChance){
+        inDoubleBlinkGap = true;
+        nextBlinkAt = blinkT + 0.09; // short gap, do second close
+      } else {
+        inDoubleBlinkGap = false;
+        nextBlinkAt = blinkT + (1.8 + Math.random()*3.4); // 1.8–5.2s
+      }
+    }
+  }
+  // apply to any blink morphs (if present)
+  if (morphGroups.blink.length){
+    setInfluences(morphGroups.blink, blinkPow);
   }
 }
 
@@ -375,20 +426,24 @@ function keepModelVisible(){ if (modelRoot) modelRoot.visible = true; }
 
 function showDebug(){
   let out = "Debug\n=====\n";
-  let foundMorph = 0;
+  let found=0;
   scene.traverse((o)=>{
     if (o.morphTargetDictionary){
-      foundMorph++; out += `Mesh: ${o.name}\n`;
+      found++; out += `Mesh: ${o.name}\n`;
       const dict=o.morphTargetDictionary;
       const keys = Object.keys(dict).sort((a,b)=>a.localeCompare(b));
       for (const k of keys){
-        const chosen = morphTargets.some(t => t.mesh===o && dict[k]===t.index);
-        const mark = chosen ? "  (chosen: open)" : "";
-        out += `  - ${k}${mark}\n`;
+        const marks = [];
+        if (/(^|_|-)(aa|ah|a)(_|-|$)/i.test(k)) marks.push("[AA]");
+        if (/(^|_|-)(ee|ih|i|iy)(_|-|$)/i.test(k)) marks.push("[EE]");
+        if (/(^|_|-)(oh|oo|uw|ou|o|u)(_|-|$)/i.test(k)) marks.push("[OO]");
+        if (/blink|eye.?close|eyes.?closed/i.test(k)) marks.push("[BLINK]");
+        if (/surprised|jawopen|mouthopen|(^|_|-)open($|_|-)/i.test(k)) marks.push("[OPEN]");
+        out += `  - ${k} ${marks.join(" ")}\n`;
       }
     }
   });
-  if (!foundMorph) out += "- No morph targets found.\n";
+  if (!found) out += "- No morph targets found.\n";
   scene.traverse((o)=>{
     if (o.isBone){
       const mark = (jaw && o===jaw) ? "  (chosen: jaw)" : (headBone && o===headBone ? "  (anchor)" : "");
@@ -403,6 +458,8 @@ let prev=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dt = (now-(prev||now))/1000; prev = now;
-  clampCamera(); keepModelVisible(); controls.update(); driveMouth(dt);
+  clampCamera(); keepModelVisible(); controls.update();
+  driveMouth(dt);
+  driveBlinkBreath(dt);
   renderer.render(scene,camera);
 }
