@@ -6,16 +6,22 @@
 import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
-// ---------- UI helpers ----------
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
 
+function el(tag, attrs={}, html=""){
+  const n = document.createElement(tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (html) n.innerHTML = html;
+  return n;
+}
+
 function addTuningUI(){
-  const wrap = document.createElement("div");
+  const wrap = el("div");
   wrap.style.cssText = `
     position:fixed; right:12px; top:60px; z-index:10;
     background:#111; color:#fff; border:1px solid #2a2a2a; border-radius:10px;
-    padding:10px 12px; font:12px/1.3 ui-sans-serif,system-ui; width:240px; box-shadow:0 8px 30px rgba(0,0,0,.35);
+    padding:10px 12px; font:12px/1.3 ui-sans-serif,system-ui; width:260px; box-shadow:0 8px 30px rgba(0,0,0,.35);
   `;
   wrap.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -36,6 +42,23 @@ function addTuningUI(){
     </label>
   `;
   document.body.appendChild(wrap);
+
+  // Speak bar (new)
+  const speak = el("div");
+  speak.style.cssText = `
+    position:fixed; left:12px; top:12px; z-index:10;
+    display:flex; gap:6px; align-items:center;
+    background:#111; color:#fff; border:1px solid #2a2a2a; border-radius:10px;
+    padding:8px 10px; font:12px ui-sans-serif,system-ui; width:560px;
+  `;
+  speak.innerHTML = `
+    <input id="sayText" value="Hey Trey, this is a live test of the lipsync. One, two, three — go!"
+      style="flex:1; background:#181818; color:#eee; border:1px solid #333; border-radius:8px; padding:8px 10px; outline:none;">
+    <button id="sayBtn" style="background:#0ea5e9;border:0;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer">Speak</button>
+    <button id="stopBtn" style="background:#ef4444;border:0;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer">Stop</button>
+  `;
+  document.body.appendChild(speak);
+
   return {
     get gain(){ return parseFloat(document.getElementById("gain").value); },
     get gate(){ return parseFloat(document.getElementById("gate").value); },
@@ -51,7 +74,9 @@ function addTuningUI(){
       const w = Math.max(0, Math.min(1, raw)) * 100;
       bar.style.width = w + "%";
       lab.textContent = "mic: " + raw.toFixed(2);
-    }
+    },
+    onSpeak(fn){ document.getElementById("sayBtn").onclick = ()=> fn(document.getElementById("sayText").value); },
+    onStop(fn){ document.getElementById("stopBtn").onclick = fn; }
   };
 }
 
@@ -64,19 +89,23 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
-let morphTargets = []; // [{ mesh, index, name, origEmissive?, origIntensity? }]
+let morphTargets = []; // [{ mesh, index, name }]
 let morphNameOpen = null;
 
 let modelRoot = null;
 let sceneSphere = null;
 let boxHelper = null;
 
-let wire = false;    // W toggles
-let basic = true;    // start BASIC so it’s always visible
+let wire = false;
+let basic = true;
 
-// Tuning
+// Tuning UI (+ speak bar)
 const ui = addTuningUI();
 ui.setLabels(ui.gain, ui.gate, ui.smooth);
+
+// TTS → viseme override (0..1) that decays
+let viseme = 0;
+let visemeDecay = 0.92;
 
 // ---------- Init ----------
 init();
@@ -99,29 +128,29 @@ function init(){
   controls.target.set(0,1.2,0);
   controls.enableDamping = true;
 
-  // Lights
   scene.add(new AmbientLight(0xffffff, 0.95));
   const key = new DirectionalLight(0xffffff, 1.7); key.position.set(3.0,3.0,2.0); scene.add(key);
   const rim = new DirectionalLight(0x88bbff, 1.0); rim.position.set(-3.0,2.0,-2.0); scene.add(rim);
 
-  // Ground & axes
   scene.add(new GridHelper(20, 20, 0x335577, 0x223344));
   const axes = new AxesHelper(0.5); axes.position.set(0,1.0,0); scene.add(axes);
 
-  // Fallback head
   fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
   fallback.position.set(-0.6,1.6,0); scene.add(fallback);
   log("✓ Fallback visible (left)");
 
   loadGLB(localGLB);
 
-  // Buttons already in the page
+  // Buttons from page
   document.getElementById("micBtn")   ?.addEventListener("click", enableMic);
   document.getElementById("ttsBtn")   ?.addEventListener("click", ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); });
   document.getElementById("debugBtn") ?.addEventListener("click", showDebug);
   document.getElementById("testBtn")  ?.addEventListener("click", ()=>{ testOpen=1; setTimeout(()=>testOpen=0, 900); });
 
-  // Keyboard toggles
+  // Speak bar hooks
+  ui.onSpeak(speakText);
+  ui.onStop(()=> speechSynthesis.cancel());
+
   addEventListener("keydown", (e)=>{
     const k = e.key.toLowerCase();
     if (k === "w"){ wire = !wire; applyWireframe(wire); log(`Wireframe: ${wire?"ON":"OFF"}`); }
@@ -173,7 +202,7 @@ function hardenPBR(o){
     try{
       m.transparent=false; m.opacity=1;
       m.depthWrite=true; m.depthTest=true;
-      m.side=2; // DoubleSide
+      m.side=2;
       if (typeof m.emissiveIntensity !== "number") m.emissiveIntensity = 0.0;
       m.wireframe = wire;
     }catch{}
@@ -202,11 +231,7 @@ function loadGLB(url){
       if (o.morphTargetDictionary && o.morphTargetInfluences){
         const pick = pickOpen(o.morphTargetDictionary);
         if (pick){
-          morphTargets.push({
-            mesh:o, index:pick.index, name:pick.name,
-            origEmissive:(o.material?.emissive?.getHex?.() ?? null),
-            origIntensity:(o.material?.emissiveIntensity ?? null)
-          });
+          morphTargets.push({ mesh:o, index:pick.index, name:pick.name });
           if (!morphNameOpen) morphNameOpen = pick.name;
         }
       }
@@ -221,9 +246,9 @@ function loadGLB(url){
     scene.add(root);
 
     captureOriginalMaterials(root);
-    applyBasic(true);        // start BASIC so it’s visible
+    applyBasic(true);
 
-    // Fit camera by bounding sphere
+    // Fit camera
     const box = new Box3().setFromObject(root);
     const center = box.getCenter(new Vector3());
     const sphere = new Sphere(); box.getBoundingSphere(sphere);
@@ -237,23 +262,19 @@ function loadGLB(url){
 
     // Mouth ring
     if (!mouthMarker){
-      mouthMarker = new Mesh(
-        new TorusGeometry(0.10, 0.022, 16, 32),
-        new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35})
-      );
+      mouthMarker = new Mesh(new TorusGeometry(0.10, 0.022, 16, 32), new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35}));
       mouthMarker.visible = true;
     }
     (jaw || headBone || root).add(mouthMarker);
     mouthMarker.position.set(0, -0.10, 0.22);
 
-    applyWireframe(wire);
     log(`✓ Model loaded. Morph picks: ${morphTargets.length}`);
     if (morphTargets.length){
       log(`• Chosen morph name: '${morphNameOpen}' on ${morphTargets.length} mesh(es)`);
       for (const t of morphTargets){ log(`  - ${t.mesh.name} → ${t.name} [${t.index}]`); }
     }
     log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
-    log("Tip: press B to toggle basic/original materials; W for wireframe.");
+    log("Tip: type text in the Speak bar and press Speak. Mic + sliders still work.");
   }, undefined, (err)=> log("ℹ Failed to load GLB ("+ (err?.message || "network/error") +")"));
 }
 
@@ -266,42 +287,65 @@ function enableMic(){
     analyser = ac.createAnalyser(); analyser.fftSize = 2048;
     dataArray = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
-    log("✓ Mic on. Speak (or press 🧪).");
+    log("✓ Mic on. Speak (or use Speak bar).");
   }).catch(()=> log("❌ Mic permission denied."));
 }
-
 function amplitude(){
   if(!analyser||!dataArray) return 0;
   analyser.getByteTimeDomainData(dataArray);
   let sum=0; for(let i=0;i<dataArray.length;i++){ const v=(dataArray[i]-128)/128; sum+=v*v; }
-  return Math.sqrt(sum/dataArray.length); // 0..~0.5
+  return Math.sqrt(sum/dataArray.length);
 }
 
-let openState = 0; // smoothed 0..1
+// TTS → simple viseme mapping
+function speakText(text){
+  if (!text || !text.trim()) return;
+  try{ speechSynthesis.cancel(); }catch{}
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1; u.pitch = 1; u.volume = 1;
 
+  const drive = (ch) => {
+    if (!ch) return;
+    const c = ch.toLowerCase();
+    // very simple class-based shapes → strength
+    if ("aeáàâäeéèêë".includes(c)) viseme = 0.85;          // wide-open vowels
+    else if ("iouóòôöuúùûü".includes(c)) viseme = 1.00;    // rounder vowels → open max
+    else if ("bpmpfvw".includes(c)) viseme = 0.25;          // labials → small pop
+    else if ("sztcjx".includes(c)) viseme = 0.35;           // sibilants
+    else if ("lnrdyghkq".includes(c)) viseme = 0.55;        // mixed
+    else if (c.trim()==="") viseme = Math.max(viseme*0.6, 0.05);
+    else viseme = 0.5;
+  };
+
+  u.onboundary = (e) => {
+    // Some browsers fire "word" boundaries, others charIndex jumps. Use charIndex if present.
+    const idx = (typeof e.charIndex === "number") ? e.charIndex : 0;
+    drive(text[idx]);
+  };
+  u.onstart = ()=> { viseme = 0.9; log("▶ Speaking…"); };
+  u.onend   = ()=> { viseme = 0;   log("■ Done."); };
+
+  speechSynthesis.speak(u);
+}
+
+let openState = 0; // smoothed mic
 function driveMouth(dt){
-  // mic → RMS
-  const ampRaw = amplitude();          // 0..~0.5
+  // mic
+  const ampRaw = amplitude();
   ui.meter(ampRaw);
-
-  // noise gate + sensitivity
   const gated  = Math.max(0, ampRaw - ui.gate);
-  const boosted= Math.min(1, gated * (ui.gain*2)); // push into 0..1 range
-
-  // smoothing (0=none, 0.95=very smooth)
+  const boosted= Math.min(1, gated * (ui.gain*2));
   const a = 1 - ui.smooth;
   openState = (1-a)*openState + a*boosted;
 
-  // include test pulse
-  const open = Math.max(testOpen, openState);
+  // decay viseme override
+  viseme = viseme * visemeDecay;
+
+  const open = Math.max(testOpen, openState, viseme);
 
   for (const t of morphTargets){
     if (t.mesh.morphTargetInfluences){
       t.mesh.morphTargetInfluences[t.index] = open;
-    }
-    const m = t.mesh.material;
-    if (m && m.emissive){
-      try{ m.emissive.setHex(0x33ff88); m.emissiveIntensity = 0.25 + open*1.5; }catch{}
     }
   }
 
