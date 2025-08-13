@@ -93,7 +93,7 @@ let sceneSphere = null;
 let boxHelper = null;
 
 let wire = false;
-let basic = true;
+let basic = false;
 
 const ui = addTuningUI();
 ui.setLabels(ui.gain, ui.gate, ui.smooth);
@@ -254,7 +254,7 @@ function loadGLB(url){
     if (!breathNode) breathNode = headBone || root;
 
     modelRoot = root; scene.add(root);
-    captureOriginalMaterials(root); applyBasic(true);
+    captureOriginalMaterials(root); applyBasic(basic);
 
     // camera fit
     const box = new Box3().setFromObject(root);
@@ -266,7 +266,7 @@ function loadGLB(url){
     camera.position.set(center.x, center.y + sphere.radius*0.2, center.z + Math.max(dist, 1.2));
 
     if (boxHelper) scene.remove(boxHelper);
-    boxHelper = new Box3Helper(box, 0x33ff88); scene.add(boxHelper);
+    boxHelper = new Box3Helper(box, 0x33ff88); scene.add(boxHelper); boxHelper.visible = false;
 
     if (!mouthMarker){
       mouthMarker = new Mesh(new TorusGeometry(0.10, 0.022, 16, 32), new MeshStandardMaterial({color:0x33ff88, emissive:0x112211, roughness:0.35}));
@@ -463,3 +463,4 @@ function loop(now){
   driveBlinkBreath(dt);
   renderer.render(scene,camera);
 }
+
