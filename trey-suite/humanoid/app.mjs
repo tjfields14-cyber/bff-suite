@@ -6,10 +6,57 @@
 import { GLTFLoader }    from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
+// ---------- UI helpers ----------
 const logEl = document.getElementById("log");
 function log(s){ logEl.textContent = (logEl.textContent?logEl.textContent+"\n":"") + s; }
-log("🚀 app.mjs loaded (wireframe=W, basic=B)");
 
+function addTuningUI(){
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `
+    position:fixed; right:12px; top:60px; z-index:10;
+    background:#111; color:#fff; border:1px solid #2a2a2a; border-radius:10px;
+    padding:10px 12px; font:12px/1.3 ui-sans-serif,system-ui; width:240px; box-shadow:0 8px 30px rgba(0,0,0,.35);
+  `;
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <b style="font-size:12px;">Tuning</b>
+      <small id="meterLabel">mic: 0.00</small>
+    </div>
+    <div id="meter" style="height:8px;border-radius:999px;background:#222;overflow:hidden;margin:6px 0 10px;">
+      <div id="meterBar" style="height:100%;width:0;background:linear-gradient(90deg,#39ff88,#80ffd5);"></div>
+    </div>
+    <label>Sensitivity <span id="gLabel">1.6</span>
+      <input id="gain" type="range" min="0.5" max="3" step="0.1" value="1.6" style="width:100%">
+    </label>
+    <label style="display:block;margin-top:6px;">Gate <span id="gateLabel">0.02</span>
+      <input id="gate" type="range" min="0" max="0.08" step="0.005" value="0.02" style="width:100%">
+    </label>
+    <label style="display:block;margin-top:6px;">Smoothing <span id="smLabel">0.75</span>
+      <input id="smooth" type="range" min="0" max="0.95" step="0.05" value="0.75" style="width:100%">
+    </label>
+  `;
+  document.body.appendChild(wrap);
+  return {
+    get gain(){ return parseFloat(document.getElementById("gain").value); },
+    get gate(){ return parseFloat(document.getElementById("gate").value); },
+    get smooth(){ return parseFloat(document.getElementById("smooth").value); },
+    setLabels(g,gt,sm){
+      document.getElementById("gLabel").textContent = g.toFixed(1);
+      document.getElementById("gateLabel").textContent = gt.toFixed(3);
+      document.getElementById("smLabel").textContent = sm.toFixed(2);
+    },
+    meter(raw){
+      const bar = document.getElementById("meterBar");
+      const lab = document.getElementById("meterLabel");
+      const w = Math.max(0, Math.min(1, raw)) * 100;
+      bar.style.width = w + "%";
+      lab.textContent = "mic: " + raw.toFixed(2);
+    }
+  };
+}
+
+// ---------- Globals ----------
+log("🚀 app.mjs loaded (wireframe=W, basic=B)");
 const localGLB = new URL("../assets/humanoid.glb", import.meta.url).href + "?v=" + Date.now();
 
 let renderer, scene, camera, controls;
@@ -17,7 +64,7 @@ let fallback=null, jaw=null, headBone=null;
 let analyser=null, dataArray=null, testOpen=0;
 let mouthMarker=null;
 
-let morphTargets = []; // [{ mesh, index, name, origEmissive?:number, origIntensity?:number }]
+let morphTargets = []; // [{ mesh, index, name, origEmissive?, origIntensity? }]
 let morphNameOpen = null;
 
 let modelRoot = null;
@@ -25,8 +72,13 @@ let sceneSphere = null;
 let boxHelper = null;
 
 let wire = false;    // W toggles
-let basic = true;    // B toggles (start in BASIC so it’s guaranteed visible)
+let basic = true;    // start BASIC so it’s always visible
 
+// Tuning
+const ui = addTuningUI();
+ui.setLabels(ui.gain, ui.gate, ui.smooth);
+
+// ---------- Init ----------
 init();
 
 function init(){
@@ -56,15 +108,14 @@ function init(){
   scene.add(new GridHelper(20, 20, 0x335577, 0x223344));
   const axes = new AxesHelper(0.5); axes.position.set(0,1.0,0); scene.add(axes);
 
-  // Fallback “head” (always visible)
+  // Fallback head
   fallback = new Mesh(new IcosahedronGeometry(0.25,3), new MeshStandardMaterial({color:0x8891ff, roughness:0.35, metalness:0.05}));
-  fallback.position.set(-0.6,1.6,0);
-  scene.add(fallback);
+  fallback.position.set(-0.6,1.6,0); scene.add(fallback);
   log("✓ Fallback visible (left)");
 
   loadGLB(localGLB);
 
-  // UI buttons if present
+  // Buttons already in the page
   document.getElementById("micBtn")   ?.addEventListener("click", enableMic);
   document.getElementById("ttsBtn")   ?.addEventListener("click", ()=>{ const u=new SpeechSynthesisUtterance("Model page ready."); speechSynthesis.cancel(); speechSynthesis.speak(u); });
   document.getElementById("debugBtn") ?.addEventListener("click", showDebug);
@@ -81,6 +132,7 @@ function init(){
   log("✅ render loop running — press W (wireframe) / B (basic)");
 }
 
+// ---------- Import helpers ----------
 function pickOpen(dict){
   const entries = Object.entries(dict);
   const prefer = [/^surprised$/i, /jawopen/i, /mouthopen/i, /^open$/i, /viseme_aa/i, /^aa$/i, /open/i, /o$/i];
@@ -90,7 +142,6 @@ function pickOpen(dict){
   return { name: hit[0], index: hit[1] };
 }
 
-// store original materials per mesh so we can swap back
 function captureOriginalMaterials(root){
   root.traverse(o=>{
     if (o.isMesh){
@@ -99,17 +150,14 @@ function captureOriginalMaterials(root){
     }
   });
 }
-
 function applyBasic(on){
   if (!modelRoot) return;
   modelRoot.traverse(o=>{
     if (!o.isMesh) return;
     if (on){
-      // neon-tinted basic material so it can't be blacked out by lighting
-      const basicMat = new MeshBasicMaterial({ color: 0x8fffd5 });
-      // preserve wireframe state
-      basicMat.wireframe = wire;
-      o.material = basicMat;
+      const m = new MeshBasicMaterial({ color: 0x8fffd5 });
+      m.wireframe = wire;
+      o.material = m;
     } else {
       if (o.userData._origMats){
         const mats = o.userData._origMats;
@@ -118,21 +166,19 @@ function applyBasic(on){
     }
   });
 }
-
 function hardenPBR(o){
   const mats = Array.isArray(o.material) ? o.material : [o.material];
   for (const m of mats){
     if (!m) continue;
     try{
-      m.transparent = false; m.opacity = 1;
-      m.depthWrite = true; m.depthTest = true;
-      m.side = 2; // DoubleSide
+      m.transparent=false; m.opacity=1;
+      m.depthWrite=true; m.depthTest=true;
+      m.side=2; // DoubleSide
       if (typeof m.emissiveIntensity !== "number") m.emissiveIntensity = 0.0;
       m.wireframe = wire;
     }catch{}
   }
 }
-
 function applyWireframe(w){
   if (!modelRoot) return;
   modelRoot.traverse(o=>{
@@ -152,11 +198,7 @@ function loadGLB(url){
     morphTargets = []; morphNameOpen = null; jaw = null; headBone = null;
 
     root.traverse((o)=>{
-      if (o.isMesh){
-        o.frustumCulled = false;
-        o.castShadow = false; o.receiveShadow = true;
-        hardenPBR(o);
-      }
+      if (o.isMesh){ o.frustumCulled=false; o.castShadow=false; o.receiveShadow=true; hardenPBR(o); }
       if (o.morphTargetDictionary && o.morphTargetInfluences){
         const pick = pickOpen(o.morphTargetDictionary);
         if (pick){
@@ -178,9 +220,8 @@ function loadGLB(url){
     modelRoot = root;
     scene.add(root);
 
-    // capture orig materials, then force BASIC ON first so you SEE it
     captureOriginalMaterials(root);
-    applyBasic(true);
+    applyBasic(true);        // start BASIC so it’s visible
 
     // Fit camera by bounding sphere
     const box = new Box3().setFromObject(root);
@@ -205,9 +246,7 @@ function loadGLB(url){
     (jaw || headBone || root).add(mouthMarker);
     mouthMarker.position.set(0, -0.10, 0.22);
 
-    // respect wireframe toggle on load
     applyWireframe(wire);
-
     log(`✓ Model loaded. Morph picks: ${morphTargets.length}`);
     if (morphTargets.length){
       log(`• Chosen morph name: '${morphNameOpen}' on ${morphTargets.length} mesh(es)`);
@@ -215,11 +254,10 @@ function loadGLB(url){
     }
     log("• Jaw bone: " + (jaw ? jaw.name : "none") + " • Head/Neck anchor: " + (headBone ? headBone.name : "none"));
     log("Tip: press B to toggle basic/original materials; W for wireframe.");
-  }, undefined, (err)=>{
-    log("ℹ Failed to load GLB ("+ (err?.message || "network/error") +")");
-  });
+  }, undefined, (err)=> log("ℹ Failed to load GLB ("+ (err?.message || "network/error") +")"));
 }
 
+// ---------- Audio / mouth drive ----------
 function enableMic(){
   log("… requesting mic");
   navigator.mediaDevices.getUserMedia({audio:true}).then((stream)=>{
@@ -236,12 +274,26 @@ function amplitude(){
   if(!analyser||!dataArray) return 0;
   analyser.getByteTimeDomainData(dataArray);
   let sum=0; for(let i=0;i<dataArray.length;i++){ const v=(dataArray[i]-128)/128; sum+=v*v; }
-  return Math.sqrt(sum/dataArray.length);
+  return Math.sqrt(sum/dataArray.length); // 0..~0.5
 }
 
-function driveMouth(){
-  const micOpen = Math.min(1, amplitude()*12);
-  const open = Math.max(testOpen, micOpen);
+let openState = 0; // smoothed 0..1
+
+function driveMouth(dt){
+  // mic → RMS
+  const ampRaw = amplitude();          // 0..~0.5
+  ui.meter(ampRaw);
+
+  // noise gate + sensitivity
+  const gated  = Math.max(0, ampRaw - ui.gate);
+  const boosted= Math.min(1, gated * (ui.gain*2)); // push into 0..1 range
+
+  // smoothing (0=none, 0.95=very smooth)
+  const a = 1 - ui.smooth;
+  openState = (1-a)*openState + a*boosted;
+
+  // include test pulse
+  const open = Math.max(testOpen, openState);
 
   for (const t of morphTargets){
     if (t.mesh.morphTargetInfluences){
@@ -265,6 +317,7 @@ function driveMouth(){
   }
 }
 
+// ---------- Loop / debug ----------
 function clampCamera(){
   if (!sceneSphere) return;
   const minD = Math.max(0.1, sceneSphere.radius * 0.6);
@@ -274,7 +327,6 @@ function clampCamera(){
   if (d < minD){ dir.setLength(minD); camera.position.copy(controls.target).add(dir); }
   if (d > maxD){ dir.setLength(maxD); camera.position.copy(controls.target).add(dir); }
 }
-
 function keepModelVisible(){ if (modelRoot) modelRoot.visible = true; }
 
 function showDebug(){
@@ -307,6 +359,6 @@ let prev=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dt = (now-(prev||now))/1000; prev = now;
-  clampCamera(); keepModelVisible(); controls.update(); driveMouth();
+  clampCamera(); keepModelVisible(); controls.update(); driveMouth(dt);
   renderer.render(scene,camera);
 }
